@@ -71,8 +71,8 @@ config_busybox()
         ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- \
         lamobo_d1_defconfig
 
-    #$MAKE O=$DEV_ROOT/output/busybox \
-    #    ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- menuconfig
+    $MAKE O=$DEV_ROOT/output/busybox \
+        ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- menuconfig
 }
 
 build_busybox()
