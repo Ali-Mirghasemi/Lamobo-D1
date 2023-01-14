@@ -458,6 +458,11 @@ static void option_instat_callback(struct urb *urb);
 #define CHANGHONG_VENDOR_ID			0x2077
 #define CHANGHONG_PRODUCT_CH690			0x7001
 
+#define QUECTEL_VENDOR_ID			0x2c7c
+#define QUECTEL_PRODUCT_EC25			0x0125
+
+#define NUMEP2		BIT(16)
+
 /* some devices interfaces need special handling due to a number of reasons */
 enum option_blacklist_reason {
 		OPTION_BLACKLIST_NONE = 0,
@@ -1345,6 +1350,11 @@ static const struct usb_device_id option_ids[] = {
 	{ USB_DEVICE(TPLINK_VENDOR_ID, TPLINK_PRODUCT_MA180),
 	  .driver_info = (kernel_ulong_t)&net_intf4_blacklist },
 	{ USB_DEVICE(CHANGHONG_VENDOR_ID, CHANGHONG_PRODUCT_CH690) },
+
+	{ USB_DEVICE_AND_INTERFACE_INFO(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_EC25, 0xff, 0xff, 0xff),
+	  .driver_info = NUMEP2 },
+	{ USB_DEVICE_AND_INTERFACE_INFO(QUECTEL_VENDOR_ID, QUECTEL_PRODUCT_EC25, 0xff, 0, 0) },
+
 	{ } /* Terminating entry */
 };
 MODULE_DEVICE_TABLE(usb, option_ids);
@@ -1391,6 +1401,7 @@ static struct usb_serial_driver option_1port_device = {
 #ifdef CONFIG_PM
 	.suspend           = usb_wwan_suspend,
 	.resume            = usb_wwan_resume,
+	.reset_resume	   = usb_wwan_resume,
 #endif
 };
 
@@ -1442,6 +1453,17 @@ static int option_probe(struct usb_serial *serial,
 		serial->dev->descriptor.idVendor == PIRELLI_VENDOR_ID) &&
 		serial->interface->cur_altsetting->desc.bInterfaceClass != 0xff)
 		return -ENODEV;
+
+	if (serial->dev->descriptor.idVendor == 0x2C7C) {
+		//some interfaces can be used as USB Network device (ecm, rndis, mbim)
+		if (serial->interface->cur_altsetting->desc.bInterfaceClass != 0xFF) {
+			return -ENODEV;
+		}
+		//interface 4 can be used as USB Network device (qmi)
+		else if (serial->interface->cur_altsetting->desc.bInterfaceNumber >= 4) {
+			return -ENODEV;
+		}
+	}
 
 	/* Don't bind reserved interfaces (like network ones) which often have
 	 * the same class/subclass/protocol as the serial interfaces.  Look at

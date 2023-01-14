@@ -407,6 +407,11 @@ static const struct driver_info	qmi_wwan_sierra = {
 	USB_DEVICE(vend, prod), \
 	.driver_info = (unsigned long)&qmi_wwan_force_int0
 
+#define QMI_MATCH_FF_FF_FF(vend, prod) \
+	USB_DEVICE_AND_INTERFACE_INFO(vend, prod, USB_CLASS_VENDOR_SPEC, \
+				      USB_SUBCLASS_VENDOR_SPEC, 0xff), \
+	.driver_info = (unsigned long)&qmi_wwan_info_quirk_dtr
+
 static const struct usb_device_id products[] = {
 	{	/* Huawei E392, E398 and possibly others sharing both device id and more... */
 		.match_flags        = USB_DEVICE_ID_MATCH_VENDOR | USB_DEVICE_ID_MATCH_INT_INFO,
@@ -625,6 +630,8 @@ static const struct usb_device_id products[] = {
 	{QMI_GOBI_DEVICE(0x1199, 0x9015)},	/* Sierra Wireless Gobi 3000 Modem device */
 	{QMI_GOBI_DEVICE(0x1199, 0x9019)},	/* Sierra Wireless Gobi 3000 Modem device */
 	{QMI_GOBI_DEVICE(0x1199, 0x901b)},	/* Sierra Wireless MC7770 */
+
+	{QMI_MATCH_FF_FF_FF(0x2c7c, 0x0125)},	/* Quectel EC25, EC20 R2.0  Mini PCIe */
 
 	{ }					/* END */
 };
