@@ -29,7 +29,8 @@ config_kernel()
     echo Configuring kernel...
     cd $DEV_ROOT/src/kernel
     $MKDIR $DEV_ROOT/output/kernel
-    $MAKE O=$DEV_ROOT/output/kernel aimer39_ak3918_D1_defconfig
+    #$MAKE O=$DEV_ROOT/output/kernel aimer39_ak3918_D1_defconfig
+    $MAKE O=$DEV_ROOT/output/kernel $DEV_ROOT/src/user_configs/kernel_config
     $MAKE O=$DEV_ROOT/output/kernel menuconfig
 }
 
@@ -67,9 +68,13 @@ config_busybox()
     echo Configuring busybox...
     cd $DEV_ROOT/src/busybox
     $MKDIR $DEV_ROOT/output/busybox
+    #$MAKE O=$DEV_ROOT/output/busybox \
+    #    ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- \
+    #    lamobo_d1_defconfig
+    
     $MAKE O=$DEV_ROOT/output/busybox \
         ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- \
-        lamobo_d1_defconfig
+        $DEV_ROOT/src/user_configs/busybox_config
 
     $MAKE O=$DEV_ROOT/output/busybox \
         ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- menuconfig
