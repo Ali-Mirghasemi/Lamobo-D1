@@ -30,7 +30,7 @@ config_kernel()
     cd $DEV_ROOT/src/kernel
     $MKDIR $DEV_ROOT/output/kernel
     $MAKE O=$DEV_ROOT/output/kernel aimer39_ak3918_D1_defconfig
-    #$MAKE O=$DEV_ROOT/output/kernel menuconfig
+    $MAKE O=$DEV_ROOT/output/kernel menuconfig
 }
 
 build_kernel()
