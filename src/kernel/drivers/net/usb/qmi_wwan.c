@@ -395,6 +395,16 @@ static const struct driver_info	qmi_wwan_sierra = {
 	.data		= BIT(8) | BIT(19), /* interface whitelist bitmap */
 };
 
+static const struct driver_info	qmi_wwan_info_quirk_dtr = {
+	.description	= "WWAN/QMI device",
+	.flags		= FLAG_WWAN | FLAG_SEND_ZLP,
+	.bind		= qmi_wwan_bind,
+	.unbind		= qmi_wwan_unbind,
+	.manage_power	= qmi_wwan_manage_power,
+	.rx_fixup       = qmi_wwan_rx_fixup,
+	.data           = QMI_WWAN_QUIRK_DTR,
+};
+
 #define HUAWEI_VENDOR_ID	0x12D1
 
 /* Gobi 1000 QMI/wwan interface number is 3 according to qcserial */
