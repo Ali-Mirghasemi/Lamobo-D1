@@ -8,7 +8,6 @@
  *
  * Licensed under GPLv2, see file LICENSE in this source tree.
  */
-
 /* We need to have separate xfuncs.c and xfuncs_printf.c because
  * with current linkers, even with section garbage collection,
  * if *.o module references any of XXXprintf functions, you pull in
@@ -19,13 +18,17 @@
  * which do not pull in printf, directly or indirectly.
  * xfunc_printf.c contains those which do.
  */
-
 #include "libbb.h"
 
 
 /* All the functions starting with "x" call bb_error_msg_and_die() if they
  * fail, so callers never need to check for errors.  If it returned, it
  * succeeded. */
+
+void FAST_FUNC bb_die_memory_exhausted(void)
+{
+	bb_error_msg_and_die(bb_msg_memory_exhausted);
+}
 
 #ifndef DMALLOC
 /* dmalloc provides variants of these that do abort() on failure.
@@ -46,7 +49,7 @@ void* FAST_FUNC xmalloc(size_t size)
 {
 	void *ptr = malloc(size);
 	if (ptr == NULL && size != 0)
-		bb_error_msg_and_die(bb_msg_memory_exhausted);
+		bb_die_memory_exhausted();
 	return ptr;
 }
 
@@ -57,7 +60,7 @@ void* FAST_FUNC xrealloc(void *ptr, size_t size)
 {
 	ptr = realloc(ptr, size);
 	if (ptr == NULL && size != 0)
-		bb_error_msg_and_die(bb_msg_memory_exhausted);
+		bb_die_memory_exhausted();
 	return ptr;
 }
 #endif /* DMALLOC */
@@ -81,7 +84,7 @@ char* FAST_FUNC xstrdup(const char *s)
 	t = strdup(s);
 
 	if (t == NULL)
-		bb_error_msg_and_die(bb_msg_memory_exhausted);
+		bb_die_memory_exhausted();
 
 	return t;
 }
@@ -112,6 +115,11 @@ char* FAST_FUNC xstrndup(const char *s, int n)
 	return memcpy(t, s, n);
 }
 
+void* FAST_FUNC xmemdup(const void *s, int n)
+{
+	return memcpy(xmalloc(n), s, n);
+}
+
 // Die if we can't open a file and return a FILE* to it.
 // Notice we haven't got xfread(), This is for use with fscanf() and friends.
 FILE* FAST_FUNC xfopen(const char *path, const char *mode)
@@ -140,15 +148,6 @@ int FAST_FUNC xopen(const char *pathname, int flags)
 	return xopen3(pathname, flags, 0666);
 }
 
-/* Die if we can't open an existing file readonly with O_NONBLOCK
- * and return the fd.
- * Note that for ioctl O_RDONLY is sufficient.
- */
-int FAST_FUNC xopen_nonblocking(const char *pathname)
-{
-	return xopen(pathname, O_RDONLY | O_NONBLOCK);
-}
-
 // Warn if we can't open a file and return a fd.
 int FAST_FUNC open3_or_warn(const char *pathname, int flags, int mode)
 {
@@ -165,6 +164,32 @@ int FAST_FUNC open3_or_warn(const char *pathname, int flags, int mode)
 int FAST_FUNC open_or_warn(const char *pathname, int flags)
 {
 	return open3_or_warn(pathname, flags, 0666);
+}
+
+/* Die if we can't open an existing file readonly with O_NONBLOCK
+ * and return the fd.
+ * Note that for ioctl O_RDONLY is sufficient.
+ */
+int FAST_FUNC xopen_nonblocking(const char *pathname)
+{
+	return xopen(pathname, O_RDONLY | O_NONBLOCK);
+}
+
+int FAST_FUNC xopen_as_uid_gid(const char *pathname, int flags, uid_t u, gid_t g)
+{
+	int fd;
+	uid_t old_euid = geteuid();
+	gid_t old_egid = getegid();
+
+	xsetegid(g);
+	xseteuid(u);
+
+	fd = xopen(pathname, flags);
+
+	xseteuid(old_euid);
+	xsetegid(old_egid);
+
+	return fd;
 }
 
 void FAST_FUNC xunlink(const char *pathname)
@@ -197,6 +222,7 @@ void FAST_FUNC xdup2(int from, int to)
 {
 	if (dup2(from, to) != to)
 		bb_perror_msg_and_die("can't duplicate file descriptor");
+		//		" %d to %d", from, to);
 }
 
 // "Renumber" opened fd
@@ -213,8 +239,16 @@ void FAST_FUNC xwrite(int fd, const void *buf, size_t count)
 {
 	if (count) {
 		ssize_t size = full_write(fd, buf, count);
-		if ((size_t)size != count)
-			bb_error_msg_and_die("short write");
+		if ((size_t)size != count) {
+			/*
+			 * Two cases: write error immediately;
+			 * or some writes succeeded, then we hit an error.
+			 * In either case, errno is set.
+			 */
+			bb_perror_msg_and_die(
+				size >= 0 ? "short write" : "write error"
+			);
+		}
 	}
 }
 void FAST_FUNC xwrite_str(int fd, const char *str)
@@ -299,14 +333,14 @@ char* FAST_FUNC xasprintf(const char *format, ...)
 	va_end(p);
 
 	if (r < 0)
-		bb_error_msg_and_die(bb_msg_memory_exhausted);
+		bb_die_memory_exhausted();
 	return string_ptr;
 }
 
 void FAST_FUNC xsetenv(const char *key, const char *value)
 {
 	if (setenv(key, value, 1))
-		bb_error_msg_and_die(bb_msg_memory_exhausted);
+		bb_die_memory_exhausted();
 }
 
 /* Handles "VAR=VAL" strings, even those which are part of environ
@@ -314,20 +348,28 @@ void FAST_FUNC xsetenv(const char *key, const char *value)
  */
 void FAST_FUNC bb_unsetenv(const char *var)
 {
-	char *tp = strchr(var, '=');
+	char onstack[128 - 16]; /* smaller stack setup code on x86 */
+	char *tp;
 
-	if (!tp) {
-		unsetenv(var);
-		return;
+	tp = strchr(var, '=');
+	if (tp) {
+		/* In case var was putenv'ed, we can't replace '='
+		 * with NUL and unsetenv(var) - it won't work,
+		 * env is modified by the replacement, unsetenv
+		 * sees "VAR" instead of "VAR=VAL" and does not remove it!
+		 * Horror :(
+		 */
+		unsigned sz = tp - var;
+		if (sz < sizeof(onstack)) {
+			((char*)mempcpy(onstack, var, sz))[0] = '\0';
+			tp = NULL;
+			var = onstack;
+		} else {
+			/* unlikely: very long var name */
+			var = tp = xstrndup(var, sz);
+		}
 	}
-
-	/* In case var was putenv'ed, we can't replace '='
-	 * with NUL and unsetenv(var) - it won't work,
-	 * env is modified by the replacement, unsetenv
-	 * sees "VAR" instead of "VAR=VAL" and does not remove it!
-	 * horror :( */
-	tp = xstrndup(var, tp - var);
-	unsetenv(tp);
+	unsetenv(var);
 	free(tp);
 }
 
@@ -351,17 +393,33 @@ void FAST_FUNC xsetuid(uid_t uid)
 	if (setuid(uid)) bb_perror_msg_and_die("setuid");
 }
 
+void FAST_FUNC xsetegid(gid_t egid)
+{
+	if (setegid(egid)) bb_perror_msg_and_die("setegid");
+}
+
+void FAST_FUNC xseteuid(uid_t euid)
+{
+	if (seteuid(euid)) bb_perror_msg_and_die("seteuid");
+}
+
 // Die if we can't chdir to a new path.
 void FAST_FUNC xchdir(const char *path)
 {
 	if (chdir(path))
-		bb_perror_msg_and_die("chdir(%s)", path);
+		bb_perror_msg_and_die("can't change directory to '%s'", path);
+}
+
+void FAST_FUNC xfchdir(int fd)
+{
+	if (fchdir(fd))
+		bb_perror_msg_and_die("fchdir");
 }
 
 void FAST_FUNC xchroot(const char *path)
 {
 	if (chroot(path))
-		bb_perror_msg_and_die("can't change root directory to %s", path);
+		bb_perror_msg_and_die("can't change root directory to '%s'", path);
 	xchdir("/");
 }
 
@@ -541,13 +599,11 @@ int FAST_FUNC bb_xioctl(int fd, unsigned request, void *argp)
 
 char* FAST_FUNC xmalloc_ttyname(int fd)
 {
-	char *buf = xzalloc(128);
-	int r = ttyname_r(fd, buf, 127);
-	if (r) {
-		free(buf);
-		buf = NULL;
-	}
-	return buf;
+	char buf[128];
+	int r = ttyname_r(fd, buf, sizeof(buf) - 1);
+	if (r)
+		return NULL;
+	return xstrdup(buf);
 }
 
 void FAST_FUNC generate_uuid(uint8_t *buf)
@@ -623,3 +679,19 @@ pid_t FAST_FUNC xfork(void)
 	return pid;
 }
 #endif
+
+void FAST_FUNC xvfork_parent_waits_and_exits(void)
+{
+	pid_t pid;
+
+	fflush_all();
+	pid = xvfork();
+	if (pid > 0) {
+		/* Parent */
+		int exit_status = wait_for_exitstatus(pid);
+		if (WIFSIGNALED(exit_status))
+			kill_myself_with_sig(WTERMSIG(exit_status));
+		_exit(WEXITSTATUS(exit_status));
+	}
+	/* Child continues */
+}

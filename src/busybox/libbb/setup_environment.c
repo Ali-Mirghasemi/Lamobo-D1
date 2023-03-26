@@ -15,7 +15,7 @@
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY JULIE HAUGH AND CONTRIBUTORS ``AS IS'' AND
+ * THIS SOFTWARE IS PROVIDED BY JULIE HAUGH AND CONTRIBUTORS ''AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
  * ARE DISCLAIMED.  IN NO EVENT SHALL JULIE HAUGH OR CONTRIBUTORS BE LIABLE
@@ -27,7 +27,6 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-
 #include "libbb.h"
 
 void FAST_FUNC setup_environment(const char *shell, int flags, const struct passwd *pw)
@@ -37,9 +36,11 @@ void FAST_FUNC setup_environment(const char *shell, int flags, const struct pass
 
 	/* Change the current working directory to be the home directory
 	 * of the user */
-	if (chdir(pw->pw_dir)) {
-		xchdir((flags & SETUP_ENV_TO_TMP) ? "/tmp" : "/");
-		bb_error_msg("can't chdir to home directory '%s'", pw->pw_dir);
+	if (!(flags & SETUP_ENV_NO_CHDIR)) {
+		if (chdir(pw->pw_dir) != 0) {
+			bb_error_msg("can't change directory to '%s'", pw->pw_dir);
+			xchdir((flags & SETUP_ENV_TO_TMP) ? "/tmp" : "/");
+		}
 	}
 
 	if (flags & SETUP_ENV_CLEARENV) {

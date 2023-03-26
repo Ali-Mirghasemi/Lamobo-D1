@@ -2,24 +2,43 @@
 /*
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
+//config:config PASSWD
+//config:	bool "passwd (21 kb)"
+//config:	default y
+//config:	select FEATURE_SYSLOG
+//config:	help
+//config:	passwd changes passwords for user and group accounts. A normal user
+//config:	may only change the password for his/her own account, the super user
+//config:	may change the password for any account. The administrator of a group
+//config:	may change the password for the group.
+//config:
+//config:	Note that busybox binary must be setuid root for this applet to
+//config:	work properly.
+//config:
+//config:config FEATURE_PASSWD_WEAK_CHECK
+//config:	bool "Check new passwords for weakness"
+//config:	default y
+//config:	depends on PASSWD
+//config:	help
+//config:	With this option passwd will refuse new passwords which are "weak".
+
+//applet:/* Needs to be run by root or be suid root - needs to change /etc/{passwd,shadow}: */
+//applet:IF_PASSWD(APPLET(passwd, BB_DIR_USR_BIN, BB_SUID_REQUIRE))
+
+//kbuild:lib-$(CONFIG_PASSWD) += passwd.o
 
 //usage:#define passwd_trivial_usage
 //usage:       "[OPTIONS] [USER]"
 //usage:#define passwd_full_usage "\n\n"
 //usage:       "Change USER's password (default: current user)"
 //usage:     "\n"
-//usage:     "\n	-a ALG	Encryption method"
+//usage:     "\n	-a ALG	"CRYPT_METHODS_HELP_STR
 //usage:     "\n	-d	Set password to ''"
 //usage:     "\n	-l	Lock (disable) account"
 //usage:     "\n	-u	Unlock (enable) account"
 
 #include "libbb.h"
 #include <syslog.h>
-
-static void nuke_str(char *str)
-{
-	if (str) memset(str, 0, strlen(str));
-}
 
 static char* new_password(const struct passwd *pw, uid_t myuid, const char *algo)
 {
@@ -32,7 +51,7 @@ static char* new_password(const struct passwd *pw, uid_t myuid, const char *algo
 	if (myuid != 0 && pw->pw_passwd[0]) {
 		char *encrypted;
 
-		orig = bb_ask_stdin("Old password: "); /* returns ptr to static */
+		orig = bb_ask_noecho_stdin("Old password: "); /* returns ptr to static */
 		if (!orig)
 			goto err_ret;
 		encrypted = pw_encrypt(orig, pw->pw_passwd, 1); /* returns malloced str */
@@ -45,11 +64,9 @@ static char* new_password(const struct passwd *pw, uid_t myuid, const char *algo
 		if (ENABLE_FEATURE_CLEAN_UP)
 			free(encrypted);
 	}
-	orig = xstrdup(orig); /* or else bb_ask_stdin() will destroy it */
-	newp = bb_ask_stdin("New password: "); /* returns ptr to static */
+	newp = bb_ask_noecho_stdin("New password: "); /* returns ptr to static */
 	if (!newp)
 		goto err_ret;
-	newp = xstrdup(newp); /* we are going to bb_ask_stdin() again, so save it */
 	if (ENABLE_FEATURE_PASSWD_WEAK_CHECK
 	 && obscure(orig, newp, pw)
 	 && myuid != 0
@@ -57,7 +74,7 @@ static char* new_password(const struct passwd *pw, uid_t myuid, const char *algo
 		goto err_ret; /* non-root is not allowed to have weak passwd */
 	}
 
-	cp = bb_ask_stdin("Retype password: ");
+	cp = bb_ask_noecho_stdin("Retype password: ");
 	if (!cp)
 		goto err_ret;
 	if (strcmp(cp, newp) != 0) {
@@ -79,6 +96,7 @@ static char* new_password(const struct passwd *pw, uid_t myuid, const char *algo
 	if (ENABLE_FEATURE_CLEAN_UP) free(newp);
 
 	nuke_str(cp);
+	if (ENABLE_FEATURE_CLEAN_UP) free(cp);
 	return ret;
 }
 
@@ -210,7 +228,7 @@ int passwd_main(int argc UNUSED_PARAM, char **argv)
 	/* LOGMODE_BOTH */
 	if (rc < 0)
 		bb_error_msg_and_die("can't update password file %s", filename);
-	bb_info_msg("Password for %s changed by %s", name, myname);
+	bb_error_msg("password for %s changed by %s", name, myname);
 
 	/*if (ENABLE_FEATURE_CLEAN_UP) free(newp); - can't, it may be non-malloced */
  skip:

@@ -9,13 +9,12 @@
  *
  * Licensed under GPLv2, see file LICENSE in this source tree.
  */
-
 /* findutils-4.1.20:
  *
  * # find file.txt -exec 'echo {}' '{}  {}' ';'
  * find: echo file.txt: No such file or directory
  * # find file.txt -exec 'echo' '{}  {}' '; '
- * find: missing argument to `-exec'
+ * find: missing argument to '-exec'
  * # find file.txt -exec 'echo {}' '{}  {}' ';' junk
  * find: paths must precede expression
  * # find file.txt -exec 'echo {}' '{}  {}' ';' junk ';'
@@ -44,7 +43,6 @@
  * # find t z t z '(' -name '*t*' -o -name '*z*' ')' -o -print
  * (no output)
  */
-
 /* Testing script
  * ./busybox find "$@" | tee /tmp/bb_find
  * echo ==================
@@ -52,191 +50,199 @@
  * echo ==================
  * diff -u /tmp/std_find /tmp/bb_find && echo Identical
  */
-
 //config:config FIND
-//config:	bool "find"
+//config:	bool "find (14 kb)"
 //config:	default y
 //config:	help
-//config:	  find is used to search your system to find specified files.
+//config:	find is used to search your system to find specified files.
 //config:
 //config:config FEATURE_FIND_PRINT0
 //config:	bool "Enable -print0: NUL-terminated output"
 //config:	default y
 //config:	depends on FIND
 //config:	help
-//config:	  Causes output names to be separated by a NUL character
-//config:	  rather than a newline. This allows names that contain
-//config:	  newlines and other whitespace to be more easily
-//config:	  interpreted by other programs.
+//config:	Causes output names to be separated by a NUL character
+//config:	rather than a newline. This allows names that contain
+//config:	newlines and other whitespace to be more easily
+//config:	interpreted by other programs.
 //config:
 //config:config FEATURE_FIND_MTIME
 //config:	bool "Enable -mtime: modified time matching"
 //config:	default y
 //config:	depends on FIND
 //config:	help
-//config:	  Allow searching based on the modification time of
-//config:	  files, in days.
+//config:	Allow searching based on the modification time of
+//config:	files, in days.
 //config:
 //config:config FEATURE_FIND_MMIN
 //config:	bool "Enable -mmin: modified time matching by minutes"
 //config:	default y
 //config:	depends on FIND
 //config:	help
-//config:	  Allow searching based on the modification time of
-//config:	  files, in minutes.
+//config:	Allow searching based on the modification time of
+//config:	files, in minutes.
 //config:
 //config:config FEATURE_FIND_PERM
 //config:	bool "Enable -perm: permissions matching"
 //config:	default y
 //config:	depends on FIND
-//config:	help
-//config:	  Enable searching based on file permissions.
 //config:
 //config:config FEATURE_FIND_TYPE
 //config:	bool "Enable -type: file type matching (file/dir/link/...)"
 //config:	default y
 //config:	depends on FIND
 //config:	help
-//config:	  Enable searching based on file type (file,
-//config:	  directory, socket, device, etc.).
+//config:	Enable searching based on file type (file,
+//config:	directory, socket, device, etc.).
+//config:
+//config:config FEATURE_FIND_EXECUTABLE
+//config:	bool "Enable -executable: file is executable"
+//config:	default y
+//config:	depends on FIND
 //config:
 //config:config FEATURE_FIND_XDEV
 //config:	bool "Enable -xdev: 'stay in filesystem'"
 //config:	default y
 //config:	depends on FIND
-//config:	help
-//config:	  This option allows find to restrict searches to a single filesystem.
 //config:
 //config:config FEATURE_FIND_MAXDEPTH
 //config:	bool "Enable -mindepth N and -maxdepth N"
 //config:	default y
 //config:	depends on FIND
-//config:	help
-//config:	  This option enables -mindepth N and -maxdepth N option.
 //config:
 //config:config FEATURE_FIND_NEWER
 //config:	bool "Enable -newer: compare file modification times"
 //config:	default y
 //config:	depends on FIND
 //config:	help
-//config:	  Support the 'find -newer' option for finding any files which have
-//config:	  modification time that is more recent than the specified FILE.
+//config:	Support the 'find -newer' option for finding any files which have
+//config:	modification time that is more recent than the specified FILE.
 //config:
 //config:config FEATURE_FIND_INUM
 //config:	bool "Enable -inum: inode number matching"
 //config:	default y
 //config:	depends on FIND
-//config:	help
-//config:	  Support the 'find -inum' option for searching by inode number.
 //config:
 //config:config FEATURE_FIND_EXEC
 //config:	bool "Enable -exec: execute commands"
 //config:	default y
 //config:	depends on FIND
 //config:	help
-//config:	  Support the 'find -exec' option for executing commands based upon
-//config:	  the files matched.
+//config:	Support the 'find -exec' option for executing commands based upon
+//config:	the files matched.
+//config:
+//config:config FEATURE_FIND_EXEC_PLUS
+//config:	bool "Enable -exec ... {} +"
+//config:	default y
+//config:	depends on FEATURE_FIND_EXEC
+//config:	help
+//config:	Support the 'find -exec ... {} +' option for executing commands
+//config:	for all matched files at once.
+//config:	Without this option, -exec + is a synonym for -exec ;
+//config:	(IOW: it works correctly, but without expected speedup)
 //config:
 //config:config FEATURE_FIND_USER
 //config:	bool "Enable -user: username/uid matching"
 //config:	default y
 //config:	depends on FIND
-//config:	help
-//config:	  Support the 'find -user' option for searching by username or uid.
 //config:
 //config:config FEATURE_FIND_GROUP
 //config:	bool "Enable -group: group/gid matching"
 //config:	default y
 //config:	depends on FIND
-//config:	help
-//config:	  Support the 'find -group' option for searching by group name or gid.
 //config:
 //config:config FEATURE_FIND_NOT
 //config:	bool "Enable the 'not' (!) operator"
 //config:	default y
 //config:	depends on FIND
 //config:	help
-//config:	  Support the '!' operator to invert the test results.
-//config:	  If 'Enable full-blown desktop' is enabled, then will also support
-//config:	  the non-POSIX notation '-not'.
+//config:	Support the '!' operator to invert the test results.
+//config:	If 'Enable full-blown desktop' is enabled, then will also support
+//config:	the non-POSIX notation '-not'.
 //config:
 //config:config FEATURE_FIND_DEPTH
 //config:	bool "Enable -depth"
 //config:	default y
 //config:	depends on FIND
 //config:	help
-//config:	  Process each directory's contents before the directory itself.
+//config:	Process each directory's contents before the directory itself.
 //config:
 //config:config FEATURE_FIND_PAREN
 //config:	bool "Enable parens in options"
 //config:	default y
 //config:	depends on FIND
 //config:	help
-//config:	  Enable usage of parens '(' to specify logical order of arguments.
+//config:	Enable usage of parens '(' to specify logical order of arguments.
 //config:
 //config:config FEATURE_FIND_SIZE
 //config:	bool "Enable -size: file size matching"
 //config:	default y
 //config:	depends on FIND
-//config:	help
-//config:	  Support the 'find -size' option for searching by file size.
 //config:
 //config:config FEATURE_FIND_PRUNE
 //config:	bool "Enable -prune: exclude subdirectories"
 //config:	default y
 //config:	depends on FIND
 //config:	help
-//config:	  If the file is a directory, dont descend into it. Useful for
-//config:	  exclusion .svn and CVS directories.
+//config:	If the file is a directory, don't descend into it. Useful for
+//config:	exclusion .svn and CVS directories.
+//config:
+//config:config FEATURE_FIND_QUIT
+//config:	bool "Enable -quit: exit"
+//config:	default y
+//config:	depends on FIND
+//config:	help
+//config:	If this action is reached, 'find' exits.
 //config:
 //config:config FEATURE_FIND_DELETE
 //config:	bool "Enable -delete: delete files/dirs"
 //config:	default y
 //config:	depends on FIND && FEATURE_FIND_DEPTH
 //config:	help
-//config:	  Support the 'find -delete' option for deleting files and directories.
-//config:	  WARNING: This option can do much harm if used wrong. Busybox will not
-//config:	  try to protect the user from doing stupid things. Use with care.
+//config:	Support the 'find -delete' option for deleting files and directories.
+//config:	WARNING: This option can do much harm if used wrong. Busybox will not
+//config:	try to protect the user from doing stupid things. Use with care.
 //config:
 //config:config FEATURE_FIND_PATH
 //config:	bool "Enable -path: match pathname with shell pattern"
 //config:	default y
 //config:	depends on FIND
 //config:	help
-//config:	  The -path option matches whole pathname instead of just filename.
+//config:	The -path option matches whole pathname instead of just filename.
 //config:
 //config:config FEATURE_FIND_REGEX
 //config:	bool "Enable -regex: match pathname with regex"
 //config:	default y
 //config:	depends on FIND
 //config:	help
-//config:	  The -regex option matches whole pathname against regular expression.
+//config:	The -regex option matches whole pathname against regular expression.
 //config:
 //config:config FEATURE_FIND_CONTEXT
 //config:	bool "Enable -context: security context matching"
 //config:	default n
 //config:	depends on FIND && SELINUX
 //config:	help
-//config:	  Support the 'find -context' option for matching security context.
+//config:	Support the 'find -context' option for matching security context.
 //config:
 //config:config FEATURE_FIND_LINKS
 //config:	bool "Enable -links: link count matching"
 //config:	default y
 //config:	depends on FIND
 //config:	help
-//config:	  Support the 'find -links' option for matching number of links.
+//config:	Support the 'find -links' option for matching number of links.
 
 //applet:IF_FIND(APPLET_NOEXEC(find, find, BB_DIR_USR_BIN, BB_SUID_DROP, find))
 
 //kbuild:lib-$(CONFIG_FIND) += find.o
 
 //usage:#define find_trivial_usage
-//usage:       "[PATH]... [OPTIONS] [ACTIONS]"
+//usage:       "[-HL] [PATH]... [OPTIONS] [ACTIONS]"
 //usage:#define find_full_usage "\n\n"
 //usage:       "Search for files and perform actions on them.\n"
 //usage:       "First failed action stops processing of current file.\n"
 //usage:       "Defaults: PATH is current directory, action is '-print'\n"
-//usage:     "\n	-follow		Follow symlinks"
+//usage:     "\n	-L,-follow	Follow symlinks"
+//usage:     "\n	-H		...on command line only"
 //usage:	IF_FEATURE_FIND_XDEV(
 //usage:     "\n	-xdev		Don't descend directories on other filesystems"
 //usage:	)
@@ -269,7 +275,10 @@
 //usage:     "\n	-regex PATTERN	Match path to regex PATTERN"
 //usage:	)
 //usage:	IF_FEATURE_FIND_TYPE(
-//usage:     "\n	-type X		File type is X (one of: f,d,l,b,c,...)"
+//usage:     "\n	-type X		File type is X (one of: f,d,l,b,c,s,p)"
+//usage:	)
+//usage:	IF_FEATURE_FIND_EXECUTABLE(
+//usage:     "\n	-executable	File is executable"
 //usage:	)
 //usage:	IF_FEATURE_FIND_PERM(
 //usage:     "\n	-perm MASK	At least one mask bit (+MASK), all bits (-MASK),"
@@ -318,8 +327,14 @@
 //usage:     "\n	-exec CMD ARG ;	Run CMD with all instances of {} replaced by"
 //usage:     "\n			file name. Fails if CMD exits with nonzero"
 //usage:	)
+//usage:	IF_FEATURE_FIND_EXEC_PLUS(
+//usage:     "\n	-exec CMD ARG + Run CMD with {} replaced by list of file names"
+//usage:	)
 //usage:	IF_FEATURE_FIND_DELETE(
 //usage:     "\n	-delete		Delete current file/directory. Turns on -depth option"
+//usage:	)
+//usage:	IF_FEATURE_FIND_QUIT(
+//usage:     "\n	-quit		Exit"
 //usage:	)
 //usage:
 //usage:#define find_example_usage
@@ -328,6 +343,7 @@
 
 #include <fnmatch.h>
 #include "libbb.h"
+#include "common_bufsiz.h"
 #if ENABLE_FEATURE_FIND_REGEX
 # include "xregex.h"
 #endif
@@ -336,8 +352,12 @@
 # define FNM_CASEFOLD 0
 #endif
 
-#define dbg(...) ((void)0)
-/* #define dbg(...) bb_error_msg(__VA_ARGS__) */
+#if 1
+# define dbg(...) ((void)0)
+#else
+# define dbg(...) bb_error_msg(__VA_ARGS__)
+#endif
+
 
 /* This is a NOEXEC applet. Be very careful! */
 
@@ -363,6 +383,7 @@ IF_FEATURE_FIND_PATH(   ACTS(path,  const char *pattern; bool ipath;))
 IF_FEATURE_FIND_REGEX(  ACTS(regex, regex_t compiled_pattern;))
 IF_FEATURE_FIND_PRINT0( ACTS(print0))
 IF_FEATURE_FIND_TYPE(   ACTS(type,  int type_mask;))
+IF_FEATURE_FIND_EXECUTABLE(ACTS(executable))
 IF_FEATURE_FIND_PERM(   ACTS(perm,  char perm_char; mode_t perm_mask;))
 IF_FEATURE_FIND_MTIME(  ACTS(mtime, char mtime_char; unsigned mtime_days;))
 IF_FEATURE_FIND_MMIN(   ACTS(mmin,  char mmin_char; unsigned mmin_mins;))
@@ -373,8 +394,22 @@ IF_FEATURE_FIND_SIZE(   ACTS(size,  char size_char; off_t size;))
 IF_FEATURE_FIND_CONTEXT(ACTS(context, security_context_t context;))
 IF_FEATURE_FIND_PAREN(  ACTS(paren, action ***subexpr;))
 IF_FEATURE_FIND_PRUNE(  ACTS(prune))
+IF_FEATURE_FIND_QUIT(   ACTS(quit))
 IF_FEATURE_FIND_DELETE( ACTS(delete))
-IF_FEATURE_FIND_EXEC(   ACTS(exec,  char **exec_argv; unsigned *subst_count; int exec_argc;))
+IF_FEATURE_FIND_EXEC(   ACTS(exec,
+				char **exec_argv; /* -exec ARGS */
+				unsigned *subst_count;
+				int exec_argc; /* count of ARGS */
+				IF_FEATURE_FIND_EXEC_PLUS(
+					/*
+					 * filelist is NULL if "exec ;"
+					 * non-NULL if "exec +"
+					 */
+					char **filelist;
+					int filelist_idx;
+					int file_len;
+				)
+				))
 IF_FEATURE_FIND_GROUP(  ACTS(group, gid_t gid;))
 IF_FEATURE_FIND_LINKS(  ACTS(links, char links_char; int links_count;))
 
@@ -387,49 +422,21 @@ struct globals {
 	action ***actions;
 	smallint need_print;
 	smallint xdev_on;
+	smalluint exitstatus;
 	recurse_flags_t recurse_flags;
+	IF_FEATURE_FIND_EXEC_PLUS(unsigned max_argv_len;)
 } FIX_ALIASING;
-#define G (*(struct globals*)&bb_common_bufsiz1)
+#define G (*(struct globals*)bb_common_bufsiz1)
 #define INIT_G() do { \
-	struct G_sizecheck { \
-		char G_sizecheck[sizeof(G) > COMMON_BUFSIZE ? -1 : 1]; \
-	}; \
+	setup_common_bufsiz(); \
+	BUILD_BUG_ON(sizeof(G) > COMMON_BUFSIZE); \
 	/* we have to zero it out because of NOEXEC */ \
 	memset(&G, 0, sizeof(G)); \
 	IF_FEATURE_FIND_MAXDEPTH(G.minmaxdepth[1] = INT_MAX;) \
+	IF_FEATURE_FIND_EXEC_PLUS(G.max_argv_len = bb_arg_max() - 2048;) \
 	G.need_print = 1; \
 	G.recurse_flags = ACTION_RECURSE; \
 } while (0)
-
-#if ENABLE_FEATURE_FIND_EXEC
-static unsigned count_subst(const char *str)
-{
-	unsigned count = 0;
-	while ((str = strstr(str, "{}")) != NULL) {
-		count++;
-		str++;
-	}
-	return count;
-}
-
-
-static char* subst(const char *src, unsigned count, const char* filename)
-{
-	char *buf, *dst, *end;
-	size_t flen = strlen(filename);
-	/* we replace each '{}' with filename: growth by strlen-2 */
-	buf = dst = xmalloc(strlen(src) + count*(flen-2) + 1);
-	while ((end = strstr(src, "{}"))) {
-		memcpy(dst, src, end - src);
-		dst += end - src;
-		src = end + 2;
-		memcpy(dst, filename, flen);
-		dst += flen;
-	}
-	strcpy(dst, src);
-	return buf;
-}
-#endif
 
 /* Return values of ACTFs ('action functions') are a bit mask:
  * bit 1=1: prune (use SKIP constant for setting it)
@@ -481,7 +488,6 @@ static int exec_actions(action ***appp, const char *fileName, const struct stat 
 	return rc ^ TRUE; /* restore TRUE bit */
 }
 
-
 #if !FNM_CASEFOLD
 static char *strcpy_upcase(char *dst, const char *src)
 {
@@ -500,26 +506,54 @@ static char *strcpy_upcase(char *dst, const char *src)
 
 ACTF(name)
 {
+	int r;
 	const char *tmp = bb_basename(fileName);
-	if (tmp != fileName && *tmp == '\0') {
-		/* "foo/bar/". Oh no... go back to 'b' */
-		tmp--;
-		while (tmp != fileName && *--tmp != '/')
-			continue;
-		if (*tmp == '/')
-			tmp++;
+	/* GNU findutils: find DIR/ -name DIR
+	 * prints "DIR/" (DIR// prints "DIR//" etc).
+	 * Need to strip trailing "/".
+	 * Such names can come only from top-level names, but
+	 * we can't do this before recursive_action() call,
+	 * since then "find FILE/ -name FILE"
+	 * would also work (on non-directories), which is wrong.
+	 */
+	char *trunc_slash = NULL;
+
+	if (*tmp == '\0') {
+		/* "foo/bar/[//...]" */
+		while (tmp != fileName && tmp[-1] == '/')
+			tmp--;
+		if (tmp == fileName) { /* entire fileName is "//.."? */
+			/* yes, convert "//..." to "/"
+			 * Testcases:
+			 * find / -maxdepth 1 -name /: prints /
+			 * find // -maxdepth 1 -name /: prints //
+			 * find / -maxdepth 1 -name //: prints nothing
+			 * find // -maxdepth 1 -name //: prints nothing
+			 */
+			if (tmp[1])
+				trunc_slash = (char*)tmp + 1;
+		} else {
+			/* no, it's "foo/bar/[//...]", go back to 'b' */
+			trunc_slash = (char*)tmp;
+			while (tmp != fileName && tmp[-1] != '/')
+				tmp--;
+		}
 	}
+
 	/* Was using FNM_PERIOD flag too,
 	 * but somewhere between 4.1.20 and 4.4.0 GNU find stopped using it.
 	 * find -name '*foo' should match .foo too:
 	 */
+	if (trunc_slash) *trunc_slash = '\0';
 #if FNM_CASEFOLD
-	return fnmatch(ap->pattern, tmp, (ap->iname ? FNM_CASEFOLD : 0)) == 0;
+	r = fnmatch(ap->pattern, tmp, (ap->iname ? FNM_CASEFOLD : 0));
 #else
 	if (ap->iname)
 		tmp = strcpy_upcase(alloca(strlen(tmp) + 1), tmp);
-	return fnmatch(ap->pattern, tmp, 0) == 0;
+	r = fnmatch(ap->pattern, tmp, 0);
 #endif
+	if (trunc_slash) *trunc_slash = '/';
+	return r == 0;
 }
 
 #if ENABLE_FEATURE_FIND_PATH
@@ -553,11 +587,17 @@ ACTF(type)
 	return ((statbuf->st_mode & S_IFMT) == ap->type_mask);
 }
 #endif
+#if ENABLE_FEATURE_FIND_EXECUTABLE
+ACTF(executable)
+{
+	return access(fileName, X_OK) == 0;
+}
+#endif
 #if ENABLE_FEATURE_FIND_PERM
 ACTF(perm)
 {
-	/* -perm +mode: at least one of perm_mask bits are set */
-	if (ap->perm_char == '+')
+	/* -perm [+/]mode: at least one of perm_mask bits are set */
+	if (ap->perm_char == '+' || ap->perm_char == '/')
 		return (statbuf->st_mode & ap->perm_mask) != 0;
 	/* -perm -mode: all of perm_mask are set */
 	if (ap->perm_char == '-')
@@ -605,17 +645,57 @@ ACTF(inum)
 }
 #endif
 #if ENABLE_FEATURE_FIND_EXEC
-ACTF(exec)
+static int do_exec(action_exec *ap, const char *fileName)
 {
 	int i, rc;
-#if ENABLE_USE_PORTABLE_CODE
-	char **argv = alloca(sizeof(char*) * (ap->exec_argc + 1));
-#else /* gcc 4.3.1 generates smaller code: */
-	char *argv[ap->exec_argc + 1];
-#endif
-	for (i = 0; i < ap->exec_argc; i++)
-		argv[i] = subst(ap->exec_argv[i], ap->subst_count[i], fileName);
-	argv[i] = NULL; /* terminate the list */
+# if ENABLE_FEATURE_FIND_EXEC_PLUS
+	int size = ap->exec_argc + ap->filelist_idx + 1;
+# else
+	int size = ap->exec_argc + 1;
+# endif
+# if ENABLE_USE_PORTABLE_CODE
+	char **argv = alloca(sizeof(char*) * size);
+# else /* gcc 4.3.1 generates smaller code: */
+	char *argv[size];
+# endif
+	char **pp = argv;
+
+	for (i = 0; i < ap->exec_argc; i++) {
+		const char *arg = ap->exec_argv[i];
+
+# if ENABLE_FEATURE_FIND_EXEC_PLUS
+		if (ap->filelist) {
+			/* Handling "-exec +"
+			 * Only one exec_argv[i] has substitution in it.
+			 * Expand that one exec_argv[i] into file list.
+			 */
+			if (ap->subst_count[i] == 0) {
+				*pp++ = xstrdup(arg);
+			} else {
+				int j = 0;
+				while (ap->filelist[j]) {
+					/* 2nd arg here should be ap->subst_count[i], but it is always 1: */
+					*pp++ = xmalloc_substitute_string(arg, 1, "{}", ap->filelist[j]);
+					free(ap->filelist[j]);
+					j++;
+				}
+			}
+		} else
+# endif
+		{
+			/* Handling "-exec ;" */
+			*pp++ = xmalloc_substitute_string(arg, ap->subst_count[i], "{}", fileName);
+		}
+	}
+	*pp = NULL; /* terminate the list */
+
+# if ENABLE_FEATURE_FIND_EXEC_PLUS
+	if (ap->filelist) {
+		ap->filelist[0] = NULL;
+		ap->filelist_idx = 0;
+		ap->file_len = 0;
+	}
+# endif
 
 	rc = spawn_and_wait(argv);
 	if (rc < 0)
@@ -626,6 +706,48 @@ ACTF(exec)
 		free(argv[i++]);
 	return rc == 0; /* return 1 if exitcode 0 */
 }
+ACTF(exec)
+{
+# if ENABLE_FEATURE_FIND_EXEC_PLUS
+	if (ap->filelist) {
+		int rc;
+
+		ap->filelist = xrealloc_vector(ap->filelist, 8, ap->filelist_idx);
+		ap->filelist[ap->filelist_idx++] = xstrdup(fileName);
+		ap->file_len += strlen(fileName) + sizeof(char*) + 1;
+		/* If we have lots of files already, exec the command */
+		rc = 1;
+		if (ap->file_len >= G.max_argv_len)
+			rc = do_exec(ap, NULL);
+		return rc;
+	}
+# endif
+	return do_exec(ap, fileName);
+}
+# if ENABLE_FEATURE_FIND_EXEC_PLUS
+static int flush_exec_plus(void)
+{
+	action *ap;
+	action **app;
+	action ***appp = G.actions;
+	while ((app = *appp++) != NULL) {
+		while ((ap = *app++) != NULL) {
+			if (ap->f == (action_fp)func_exec) {
+				action_exec *ae = (void*)ap;
+				if (ae->filelist_idx != 0) {
+					int rc = do_exec(ae, NULL);
+#  if ENABLE_FEATURE_FIND_NOT
+					if (ap->invert) rc = !rc;
+#  endif
+					if (rc == 0)
+						return 1;
+				}
+			}
+		}
+	}
+	return 0;
+}
+# endif
 #endif
 #if ENABLE_FEATURE_FIND_USER
 ACTF(user)
@@ -679,12 +801,21 @@ ACTF(prune)
 	return SKIP + TRUE;
 }
 #endif
+#if ENABLE_FEATURE_FIND_QUIT
+ACTF(quit)
+{
+	exit(G.exitstatus);
+}
+#endif
 #if ENABLE_FEATURE_FIND_DELETE
 ACTF(delete)
 {
 	int rc;
 	if (S_ISDIR(statbuf->st_mode)) {
-		rc = rmdir(fileName);
+		/* "find . -delete" skips rmdir(".") */
+		rc = 0;
+		if (NOT_LONE_CHAR(fileName, '.'))
+			rc = rmdir(fileName);
 	} else {
 		rc = unlink(fileName);
 	}
@@ -728,10 +859,27 @@ static int FAST_FUNC fileAction(const char *fileName,
 		int depth IF_NOT_FEATURE_FIND_MAXDEPTH(UNUSED_PARAM))
 {
 	int r;
+	int same_fs = 1;
+
+#if ENABLE_FEATURE_FIND_XDEV
+	if (S_ISDIR(statbuf->st_mode) && G.xdev_count) {
+		int i;
+		for (i = 0; i < G.xdev_count; i++) {
+			if (G.xdev_dev[i] == statbuf->st_dev)
+				goto found;
+		}
+		//bb_error_msg("'%s': not same fs", fileName);
+		same_fs = 0;
+ found: ;
+	}
+#endif
 
 #if ENABLE_FEATURE_FIND_MAXDEPTH
-	if (depth < G.minmaxdepth[0])
-		return TRUE; /* skip this, continue recursing */
+	if (depth < G.minmaxdepth[0]) {
+		if (same_fs)
+			return TRUE; /* skip this, continue recursing */
+		return SKIP; /* stop recursing */
+	}
 	if (depth > G.minmaxdepth[1])
 		return SKIP; /* stop recursing */
 #endif
@@ -747,21 +895,11 @@ static int FAST_FUNC fileAction(const char *fileName,
 			return SKIP;
 	}
 #endif
-#if ENABLE_FEATURE_FIND_XDEV
 	/* -xdev stops on mountpoints, but AFTER mountpoit itself
 	 * is processed as usual */
-	if (S_ISDIR(statbuf->st_mode)) {
-		if (G.xdev_count) {
-			int i;
-			for (i = 0; i < G.xdev_count; i++) {
-				if (G.xdev_dev[i] == statbuf->st_dev)
-					goto found;
-			}
-			return SKIP;
- found: ;
-		}
+	if (!same_fs) {
+		return SKIP;
 	}
-#endif
 
 	/* Cannot return 0: our caller, recursive_action(),
 	 * will perror() and skip dirs (if called on dir) */
@@ -790,7 +928,7 @@ static int find_type(const char *type)
 		mask = S_IFSOCK;
 
 	if (mask == 0 || type[1] != '\0')
-		bb_error_msg_and_die(bb_msg_invalid_arg, type, "-type");
+		bb_error_msg_and_die(bb_msg_invalid_arg_to, type, "-type");
 
 	return mask;
 }
@@ -804,6 +942,31 @@ static const char* plus_minus_num(const char* str)
 	if (*str == '-' || *str == '+')
 		str++;
 	return str;
+}
+#endif
+
+/* Say no to GCCism */
+#define USE_NESTED_FUNCTION 0
+
+#if !USE_NESTED_FUNCTION
+struct pp_locals {
+	action*** appp;
+	unsigned cur_group;
+	unsigned cur_action;
+	IF_FEATURE_FIND_NOT( bool invert_flag; )
+};
+static action* alloc_action(struct pp_locals *ppl, int sizeof_struct, action_fp f)
+{
+	action *ap = xzalloc(sizeof_struct);
+	action **app;
+	action ***group = &ppl->appp[ppl->cur_group];
+	*group = app = xrealloc(*group, (ppl->cur_action+2) * sizeof(ppl->appp[0][0]));
+	app[ppl->cur_action++] = ap;
+	app[ppl->cur_action] = NULL;
+	ap->f = f;
+	IF_FEATURE_FIND_NOT( ap->invert = ppl->invert_flag; )
+	IF_FEATURE_FIND_NOT( ppl->invert_flag = 0; )
+	return ap;
 }
 #endif
 
@@ -824,8 +987,10 @@ static action*** parse_params(char **argv)
 	                        PARM_print     ,
 	IF_FEATURE_FIND_PRINT0( PARM_print0    ,)
 	IF_FEATURE_FIND_PRUNE(  PARM_prune     ,)
+	IF_FEATURE_FIND_QUIT(   PARM_quit      ,)
 	IF_FEATURE_FIND_DELETE( PARM_delete    ,)
 	IF_FEATURE_FIND_EXEC(   PARM_exec      ,)
+	IF_FEATURE_FIND_EXECUTABLE(PARM_executable,)
 	IF_FEATURE_FIND_PAREN(  PARM_char_brace,)
 	/* All options/actions starting from here require argument */
 	                        PARM_name      ,
@@ -867,12 +1032,14 @@ static action*** parse_params(char **argv)
 	                        "-print\0"
 	IF_FEATURE_FIND_PRINT0( "-print0\0" )
 	IF_FEATURE_FIND_PRUNE(  "-prune\0"  )
+	IF_FEATURE_FIND_QUIT(   "-quit\0"  )
 	IF_FEATURE_FIND_DELETE( "-delete\0" )
 	IF_FEATURE_FIND_EXEC(   "-exec\0"   )
+	IF_FEATURE_FIND_EXECUTABLE("-executable\0")
 	IF_FEATURE_FIND_PAREN(  "(\0"       )
 	/* All options/actions starting from here require argument */
-	                         "-name\0"
-	                         "-iname\0"
+	                        "-name\0"
+	                        "-iname\0"
 	IF_FEATURE_FIND_PATH(   "-path\0"   )
 #if ENABLE_DESKTOP
 	IF_FEATURE_FIND_PATH(   "-wholename\0")
@@ -893,10 +1060,18 @@ static action*** parse_params(char **argv)
 	IF_FEATURE_FIND_MAXDEPTH("-mindepth\0""-maxdepth\0")
 	;
 
+#if !USE_NESTED_FUNCTION
+	struct pp_locals ppl;
+#define appp        (ppl.appp       )
+#define cur_group   (ppl.cur_group  )
+#define cur_action  (ppl.cur_action )
+#define invert_flag (ppl.invert_flag)
+#define ALLOC_ACTION(name) (action_##name*)alloc_action(&ppl, sizeof(action_##name), (action_fp) func_##name)
+#else
 	action*** appp;
-	unsigned cur_group = 0;
-	unsigned cur_action = 0;
-	IF_FEATURE_FIND_NOT( bool invert_flag = 0; )
+	unsigned cur_group;
+	unsigned cur_action;
+	IF_FEATURE_FIND_NOT( bool invert_flag; )
 
 	/* This is the only place in busybox where we use nested function.
 	 * So far more standard alternatives were bigger. */
@@ -905,7 +1080,7 @@ static action*** parse_params(char **argv)
 	action* alloc_action(int sizeof_struct, action_fp f)
 	{
 		action *ap;
-		appp[cur_group] = xrealloc(appp[cur_group], (cur_action+2) * sizeof(*appp));
+		appp[cur_group] = xrealloc(appp[cur_group], (cur_action+2) * sizeof(appp[0][0]));
 		appp[cur_group][cur_action++] = ap = xzalloc(sizeof_struct);
 		appp[cur_group][cur_action] = NULL;
 		ap->f = f;
@@ -913,9 +1088,12 @@ static action*** parse_params(char **argv)
 		IF_FEATURE_FIND_NOT( invert_flag = 0; )
 		return ap;
 	}
-
 #define ALLOC_ACTION(name) (action_##name*)alloc_action(sizeof(action_##name), (action_fp) func_##name)
+#endif
 
+	cur_group = 0;
+	cur_action = 0;
+	IF_FEATURE_FIND_NOT( invert_flag = 0; )
 	appp = xzalloc(2 * sizeof(appp[0])); /* appp[0],[1] == NULL */
 
 	while (*argv) {
@@ -941,8 +1119,8 @@ static action*** parse_params(char **argv)
  */
 		/* Options */
 		if (parm == OPT_FOLLOW) {
-                        dbg("follow enabled: %d", __LINE__);
-                        G.recurse_flags |= ACTION_FOLLOWLINKS | ACTION_DANGLING_OK;
+			dbg("follow enabled: %d", __LINE__);
+			G.recurse_flags |= ACTION_FOLLOWLINKS | ACTION_DANGLING_OK;
 		}
 #if ENABLE_FEATURE_FIND_XDEV
 		else if (parm == OPT_XDEV) {
@@ -980,7 +1158,7 @@ static action*** parse_params(char **argv)
 			dbg("%d", __LINE__);
 			/* start new OR group */
 			cur_group++;
-			appp = xrealloc(appp, (cur_group+2) * sizeof(*appp));
+			appp = xrealloc(appp, (cur_group+2) * sizeof(appp[0]));
 			/*appp[cur_group] = NULL; - already NULL */
 			appp[cur_group+1] = NULL;
 			cur_action = 0;
@@ -1011,6 +1189,12 @@ static action*** parse_params(char **argv)
 			(void) ALLOC_ACTION(prune);
 		}
 #endif
+#if ENABLE_FEATURE_FIND_QUIT
+		else if (parm == PARM_quit) {
+			dbg("%d", __LINE__);
+			(void) ALLOC_ACTION(quit);
+		}
+#endif
 #if ENABLE_FEATURE_FIND_DELETE
 		else if (parm == PARM_delete) {
 			dbg("%d", __LINE__);
@@ -1023,6 +1207,7 @@ static action*** parse_params(char **argv)
 		else if (parm == PARM_exec) {
 			int i;
 			action_exec *ap;
+			IF_FEATURE_FIND_EXEC_PLUS(int all_subst = 0;)
 			dbg("%d", __LINE__);
 			G.need_print = 0;
 			ap = ALLOC_ACTION(exec);
@@ -1035,10 +1220,13 @@ static action*** parse_params(char **argv)
 				// executes "echo Foo >FILENAME<",
 				// find -exec echo Foo ">{}<" "+"
 				// executes "echo Foo FILENAME1 FILENAME2 FILENAME3...".
-				// TODO (so far we treat "+" just like ";")
 				if ((argv[0][0] == ';' || argv[0][0] == '+')
 				 && argv[0][1] == '\0'
 				) {
+# if ENABLE_FEATURE_FIND_EXEC_PLUS
+					if (argv[0][0] == '+')
+						ap->filelist = xzalloc(sizeof(ap->filelist[0]));
+# endif
 					break;
 				}
 				argv++;
@@ -1048,8 +1236,17 @@ static action*** parse_params(char **argv)
 				bb_error_msg_and_die(bb_msg_requires_arg, arg);
 			ap->subst_count = xmalloc(ap->exec_argc * sizeof(int));
 			i = ap->exec_argc;
-			while (i--)
-				ap->subst_count[i] = count_subst(ap->exec_argv[i]);
+			while (i--) {
+				ap->subst_count[i] = count_strstr(ap->exec_argv[i], "{}");
+				IF_FEATURE_FIND_EXEC_PLUS(all_subst += ap->subst_count[i];)
+			}
+# if ENABLE_FEATURE_FIND_EXEC_PLUS
+			/*
+			 * coreutils expects {} to appear only once in "-exec +"
+			 */
+			if (all_subst != 1 && ap->filelist)
+				bb_error_msg_and_die("only one '{}' allowed for -exec +");
+# endif
 		}
 #endif
 #if ENABLE_FEATURE_FIND_PAREN
@@ -1108,20 +1305,26 @@ static action*** parse_params(char **argv)
 			dbg("created:type mask:%x", ap->type_mask);
 		}
 #endif
+#if ENABLE_FEATURE_FIND_EXECUTABLE
+		else if (parm == PARM_executable) {
+			(void) ALLOC_ACTION(executable);
+		}
+#endif
 #if ENABLE_FEATURE_FIND_PERM
 /* -perm BITS   File's mode bits are exactly BITS (octal or symbolic).
  *              Symbolic modes use mode 0 as a point of departure.
  * -perm -BITS  All of the BITS are set in file's mode.
- * -perm +BITS  At least one of the BITS is set in file's mode.
+ * -perm [+/]BITS  At least one of the BITS is set in file's mode.
  */
 		else if (parm == PARM_perm) {
 			action_perm *ap;
 			dbg("%d", __LINE__);
 			ap = ALLOC_ACTION(perm);
 			ap->perm_char = arg1[0];
-			arg1 = plus_minus_num(arg1);
+			arg1 = (arg1[0] == '/' ? arg1+1 : plus_minus_num(arg1));
 			/*ap->perm_mask = 0; - ALLOC_ACTION did it */
-			if (!bb_parse_mode(arg1, &ap->perm_mask))
+			ap->perm_mask = bb_parse_mode(arg1, ap->perm_mask);
+			if (ap->perm_mask == (mode_t)-1)
 				bb_error_msg_and_die("invalid mode '%s'", arg1);
 		}
 #endif
@@ -1238,16 +1441,46 @@ static action*** parse_params(char **argv)
 	dbg("exiting %s", __func__);
 	return appp;
 #undef ALLOC_ACTION
+#undef appp
+#undef cur_action
+#undef invert_flag
 }
 
 int find_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 int find_main(int argc UNUSED_PARAM, char **argv)
 {
-	int i, firstopt, status = EXIT_SUCCESS;
+	int i, firstopt;
+	char **past_HLP, *saved;
 
 	INIT_G();
 
-	argv++;
+	/* "find -type f" + getopt("+HLP") => disaster.
+	 * Need to avoid getopt running into a non-HLP option.
+	 * Do this by temporarily storing NULL there:
+	 */
+	past_HLP = argv;
+	for (;;) {
+		saved = *++past_HLP;
+		if (!saved)
+			break;
+		if (saved[0] != '-')
+			break;
+		if (!saved[1])
+			break; /* it is "-" */
+		if ((saved+1)[strspn(saved+1, "HLP")] != '\0')
+			break;
+	}
+	*past_HLP = NULL;
+	/* "+": stop on first non-option */
+	i = getopt32(argv, "+HLP");
+	if (i & (1<<0))
+		G.recurse_flags |= ACTION_FOLLOWLINKS_L0 | ACTION_DANGLING_OK;
+	if (i & (1<<1))
+		G.recurse_flags |= ACTION_FOLLOWLINKS | ACTION_DANGLING_OK;
+	/* -P is default and is ignored */
+	argv = past_HLP; /* same result as "argv += optind;" */
+	*past_HLP = saved;
+
 	for (firstopt = 0; argv[firstopt]; firstopt++) {
 		if (argv[firstopt][0] == '-')
 			break;
@@ -1290,9 +1523,10 @@ int find_main(int argc UNUSED_PARAM, char **argv)
 				NULL,           /* user data */
 				0)              /* depth */
 		) {
-			status = EXIT_FAILURE;
+			G.exitstatus |= EXIT_FAILURE;
 		}
 	}
 
-	return status;
+	IF_FEATURE_FIND_EXEC_PLUS(G.exitstatus |= flush_exec_plus();)
+	return G.exitstatus;
 }

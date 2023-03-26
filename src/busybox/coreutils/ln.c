@@ -6,6 +6,15 @@
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
+//config:config LN
+//config:	bool "ln (4.9 kb)"
+//config:	default y
+//config:	help
+//config:	ln is used to create hard or soft links between files.
+
+//applet:IF_LN(APPLET_NOEXEC(ln, ln, BB_DIR_BIN, BB_SUID_DROP, ln))
+
+//kbuild:lib-$(CONFIG_LN) += ln.o
 
 /* BB_AUDIT SUSv3 compliant */
 /* BB_AUDIT GNU options missing: -d, -F, -i, and -v. */
@@ -20,6 +29,8 @@
 //usage:     "\n	-n	Don't dereference symlinks - treat like normal file"
 //usage:     "\n	-b	Make a backup of the target (if exists) before link operation"
 //usage:     "\n	-S suf	Use suffix instead of ~ when making backup files"
+//usage:     "\n	-T	2nd arg must be a DIR"
+//usage:     "\n	-v	Verbose"
 //usage:
 //usage:#define ln_example_usage
 //usage:       "$ ln -s BusyBox /tmp/ls\n"
@@ -31,11 +42,13 @@
 /* This is a NOEXEC applet. Be very careful! */
 
 
-#define LN_SYMLINK          1
-#define LN_FORCE            2
-#define LN_NODEREFERENCE    4
-#define LN_BACKUP           8
-#define LN_SUFFIX           16
+#define LN_SYMLINK          (1 << 0)
+#define LN_FORCE            (1 << 1)
+#define LN_NODEREFERENCE    (1 << 2)
+#define LN_BACKUP           (1 << 3)
+#define LN_SUFFIX           (1 << 4)
+#define LN_VERBOSE          (1 << 5)
+#define LN_LINKFILE         (1 << 6)
 
 int ln_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 int ln_main(int argc, char **argv)
@@ -49,11 +62,15 @@ int ln_main(int argc, char **argv)
 	struct stat statbuf;
 	int (*link_func)(const char *, const char *);
 
-	opt_complementary = "-1"; /* min one arg */
-	opts = getopt32(argv, "sfnbS:", &suffix);
+	opts = getopt32(argv, "^" "sfnbS:vT" "\0" "-1", &suffix);
 
 	last = argv[argc - 1];
 	argv += optind;
+	argc -= optind;
+
+	if ((opts & LN_LINKFILE) && argc > 2) {
+		bb_error_msg_and_die("-T accepts 2 args max");
+	}
 
 	if (!argv[1]) {
 		/* "ln PATH/TO/FILE" -> "ln PATH/TO/FILE FILE" */
@@ -72,6 +89,9 @@ int ln_main(int argc, char **argv)
 		                (opts & LN_NODEREFERENCE) ^ LN_NODEREFERENCE
 		                )
 		) {
+			if (opts & LN_LINKFILE) {
+				bb_error_msg_and_die("'%s' is a directory", src);
+			}
 			src_name = xstrdup(*argv);
 			src = concat_path_file(src, bb_get_last_path_component_strip(src_name));
 			free(src_name);
@@ -112,13 +132,16 @@ int ln_main(int argc, char **argv)
 			link_func = symlink;
 		}
 
+		if (opts & LN_VERBOSE) {
+			printf("'%s' -> '%s'\n", src, *argv);
+		}
+
 		if (link_func(*argv, src) != 0) {
 			bb_simple_perror_msg(src);
 			status = EXIT_FAILURE;
 		}
 
 		free(src_name);
-
 	} while ((++argv)[1]);
 
 	return status;

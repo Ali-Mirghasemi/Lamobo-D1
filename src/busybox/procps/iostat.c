@@ -6,12 +6,11 @@
  *
  * Licensed under GPLv2, see file LICENSE in this source tree.
  */
-
 //config:config IOSTAT
-//config:	bool "iostat"
+//config:	bool "iostat (7.6 kb)"
 //config:	default y
 //config:	help
-//config:	  Report CPU and I/O statistics
+//config:	Report CPU and I/O statistics
 
 //applet:IF_IOSTAT(APPLET(iostat, BB_DIR_BIN, BB_SUID_DROP))
 
@@ -109,11 +108,6 @@ enum {
 	OPT_m = 1 << 5,
 };
 
-static ALWAYS_INLINE unsigned get_user_hz(void)
-{
-	return sysconf(_SC_CLK_TCK);
-}
-
 static ALWAYS_INLINE int this_is_smp(void)
 {
 	return (G.total_cpus > 1);
@@ -147,7 +141,7 @@ static void print_timestamp(void)
 	/* %x: date representation for the current locale */
 	/* %X: time representation for the current locale */
 	strftime(buf, sizeof(buf), "%x %X", &G.tmtime);
-	printf("%s\n", buf);
+	puts(buf);
 }
 
 static cputime_t get_smp_uptime(void)
@@ -414,7 +408,7 @@ int iostat_main(int argc UNUSED_PARAM, char **argv)
 	memset(&stats_data, 0, sizeof(stats_data));
 
 	/* Get number of clock ticks per sec */
-	G.clk_tck = get_user_hz();
+	G.clk_tck = bb_clk_tck();
 
 	/* Determine number of CPUs */
 	G.total_cpus = get_cpu_count();
@@ -423,8 +417,7 @@ int iostat_main(int argc UNUSED_PARAM, char **argv)
 
 	/* Parse and process arguments */
 	/* -k and -m are mutually exclusive */
-	opt_complementary = "k--m:m--k";
-	opt = getopt32(argv, "cdtzkm");
+	opt = getopt32(argv, "^" "cdtzkm" "\0" "k--m:m--k");
 	if (!(opt & (OPT_c + OPT_d)))
 		/* Default is -cd */
 		opt |= OPT_c + OPT_d;

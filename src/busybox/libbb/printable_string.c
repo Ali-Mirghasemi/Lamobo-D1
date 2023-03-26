@@ -9,11 +9,8 @@
 #include "libbb.h"
 #include "unicode.h"
 
-const char* FAST_FUNC printable_string(uni_stat_t *stats, const char *str)
+const char* FAST_FUNC printable_string2(uni_stat_t *stats, const char *str)
 {
-	static char *saved[4];
-	static unsigned cur_saved; /* = 0 */
-
 	char *dst;
 	const char *s;
 
@@ -56,10 +53,10 @@ const char* FAST_FUNC printable_string(uni_stat_t *stats, const char *str)
 		}
 	}
 #endif
+	return auto_string(dst);
+}
 
-	free(saved[cur_saved]);
-	saved[cur_saved] = dst;
-	cur_saved = (cur_saved + 1) & (ARRAY_SIZE(saved)-1);
-
-	return dst;
+const char* FAST_FUNC printable_string(const char *str)
+{
+	return printable_string2(NULL, str);
 }

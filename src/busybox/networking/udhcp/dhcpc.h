@@ -9,10 +9,10 @@ PUSH_AND_SET_FUNCTION_VISIBILITY_TO_HIDDEN
 
 struct client_config_t {
 	uint8_t client_mac[6];          /* Our mac address */
-	char no_default_options;        /* Do not include default options in request */
 	IF_FEATURE_UDHCP_PORT(uint16_t port;)
 	int ifindex;                    /* Index number of the interface to use */
 	uint8_t opt_mask[256 / 8];      /* Bitmask of options to send (-O option) */
+// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ TODO: DHCPv6 has 16-bit option numbers
 	const char *interface;          /* The name of the interface to use */
 	char *pidfile;                  /* Optionally store the process ID */
 	const char *script;             /* User script to run at dhcp events */
@@ -30,9 +30,11 @@ struct client_config_t {
 #define client_config (*(struct client_config_t*)(&bb_common_bufsiz1[COMMON_BUFSIZE / 2]))
 
 #if ENABLE_FEATURE_UDHCP_PORT
-#define CLIENT_PORT (client_config.port)
+#define CLIENT_PORT  (client_config.port)
+#define CLIENT_PORT6 (client_config.port)
 #else
-#define CLIENT_PORT 68
+#define CLIENT_PORT  68
+#define CLIENT_PORT6 546
 #endif
 
 POP_SAVED_FUNCTION_VISIBILITY

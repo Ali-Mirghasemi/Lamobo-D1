@@ -15,7 +15,7 @@
 
    The LZO library is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
@@ -31,8 +31,7 @@
 ************************************************************************/
 /* safe decompression with overrun testing */
 int lzo1x_decompress_safe(const uint8_t* in, unsigned in_len,
-		uint8_t* out, unsigned* out_len,
-		void* wrkmem UNUSED_PARAM)
+		uint8_t* out, unsigned* out_len /*, void* wrkmem */)
 {
 	register uint8_t* op;
 	register const uint8_t* ip;
@@ -92,6 +91,7 @@ int lzo1x_decompress_safe(const uint8_t* in, unsigned in_len,
 				ip++;
 				NEED_IP(1);
 			}
+			TEST_IV(t);
 			t += 15 + *ip++;
 		}
 		/* copy literals */
@@ -224,6 +224,7 @@ int lzo1x_decompress_safe(const uint8_t* in, unsigned in_len,
 						ip++;
 						NEED_IP(1);
 					}
+					TEST_IV(t);
 					t += 31 + *ip++;
 				}
 #if defined(COPY_DICT)
@@ -265,6 +266,7 @@ int lzo1x_decompress_safe(const uint8_t* in, unsigned in_len,
 						ip++;
 						NEED_IP(1);
 					}
+					TEST_IV(t);
 					t += 7 + *ip++;
 				}
 #if defined(COPY_DICT)

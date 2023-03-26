@@ -7,6 +7,12 @@
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
+
+//kbuild:lib-$(CONFIG_BLKID) += get_devname.o
+//kbuild:lib-$(CONFIG_FINDFS) += get_devname.o
+//kbuild:lib-$(CONFIG_FEATURE_MOUNT_LABEL) += get_devname.o
+//kbuild:lib-$(CONFIG_FEATURE_SWAPONOFF_LABEL) += get_devname.o
+
 #include <sys/mount.h> /* BLKGETSIZE64 */
 #if !defined(BLKGETSIZE64)
 # define BLKGETSIZE64 _IOR(0x12,114,size_t)
@@ -49,7 +55,11 @@ get_label_uuid(int fd, char **label, char **uuid, const char **type)
 	if (volume_id_probe_all(vid, /*0,*/ size) != 0)
 		goto ret;
 
-	if (vid->label[0] != '\0' || vid->uuid[0] != '\0') {
+	if (vid->label[0] != '\0' || vid->uuid[0] != '\0'
+#if ENABLE_FEATURE_BLKID_TYPE
+	 || vid->type != NULL
+#endif
+	) {
 		*label = xstrndup(vid->label, sizeof(vid->label));
 		*uuid  = xstrndup(vid->uuid, sizeof(vid->uuid));
 #if ENABLE_FEATURE_BLKID_TYPE
@@ -98,7 +108,11 @@ uuidcache_check_device(const char *device,
 		int depth UNUSED_PARAM)
 {
 	/* note: this check rejects links to devices, among other nodes */
-	if (!S_ISBLK(statbuf->st_mode))
+	if (!S_ISBLK(statbuf->st_mode)
+#if ENABLE_FEATURE_VOLUMEID_UBIFS
+	 && !(S_ISCHR(statbuf->st_mode) && strncmp(bb_basename(device), "ubi", 3) == 0)
+#endif
+	)
 		return TRUE;
 
 	/* Users report that mucking with floppies (especially non-present
@@ -293,9 +307,9 @@ int resolve_mount_spec(char **fsname)
 {
 	char *tmp = *fsname;
 
-	if (strncmp(*fsname, "UUID=", 5) == 0)
+	if (is_prefixed_with(*fsname, "UUID="))
 		tmp = get_devname_from_uuid(*fsname + 5);
-	else if (strncmp(*fsname, "LABEL=", 6) == 0)
+	else if (is_prefixed_with(*fsname, "LABEL="))
 		tmp = get_devname_from_label(*fsname + 6);
 
 	if (tmp == *fsname)

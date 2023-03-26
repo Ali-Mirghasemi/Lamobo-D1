@@ -7,13 +7,31 @@
  * Copyright (C) 2007 by Tito Ragusa <farmatito@tiscali.it>
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
- *
  */
+//config:config ADDGROUP
+//config:	bool "addgroup (8.6 kb)"
+//config:	default y
+//config:	select LONG_OPTS
+//config:	help
+//config:	Utility for creating a new group account.
+//config:
+//config:config FEATURE_ADDUSER_TO_GROUP
+//config:	bool "Support adding users to groups"
+//config:	default y
+//config:	depends on ADDGROUP
+//config:	help
+//config:	If called with two non-option arguments,
+//config:	addgroup will add an existing user to an
+//config:	existing group.
+
+//applet:IF_ADDGROUP(APPLET_NOEXEC(addgroup, addgroup, BB_DIR_USR_SBIN, BB_SUID_DROP, addgroup))
+
+//kbuild:lib-$(CONFIG_ADDGROUP) += addgroup.o
 
 //usage:#define addgroup_trivial_usage
-//usage:       "[-g GID] " IF_FEATURE_ADDUSER_TO_GROUP("[USER] ") "GROUP"
+//usage:       "[-g GID] [-S] " IF_FEATURE_ADDUSER_TO_GROUP("[USER] ") "GROUP"
 //usage:#define addgroup_full_usage "\n\n"
-//usage:       "Add a group " IF_FEATURE_ADDUSER_TO_GROUP("or add a user to a group") "\n"
+//usage:       "Add a group" IF_FEATURE_ADDUSER_TO_GROUP(" or add a user to a group") "\n"
 //usage:     "\n	-g GID	Group id"
 //usage:     "\n	-S	Create a system group"
 
@@ -22,14 +40,16 @@
 #if CONFIG_LAST_SYSTEM_ID < CONFIG_FIRST_SYSTEM_ID
 #error Bad LAST_SYSTEM_ID or FIRST_SYSTEM_ID in .config
 #endif
+#if CONFIG_LAST_ID < CONFIG_LAST_SYSTEM_ID
+#error Bad LAST_ID or LAST_SYSTEM_ID in .config
+#endif
 
 #define OPT_GID                       (1 << 0)
 #define OPT_SYSTEM_ACCOUNT            (1 << 1)
 
-/* We assume GID_T_MAX == INT_MAX */
 static void xgroup_study(struct group *g)
 {
-	unsigned max = INT_MAX;
+	unsigned max = CONFIG_LAST_ID;
 
 	/* Make sure gr_name is unused */
 	if (getgrnam(g->gr_name)) {
@@ -46,7 +66,6 @@ static void xgroup_study(struct group *g)
 			max = CONFIG_LAST_SYSTEM_ID;
 		} else {
 			g->gr_gid = CONFIG_LAST_SYSTEM_ID + 1;
-			max = 64999;
 		}
 	}
 	/* Check if the desired gid is free
@@ -107,12 +126,11 @@ static void new_group(char *group, gid_t gid)
 #endif
 }
 
-#if ENABLE_FEATURE_ADDGROUP_LONG_OPTIONS
+//FIXME: upstream addgroup has no short options! NOT COMPATIBLE!
 static const char addgroup_longopts[] ALIGN1 =
 		"gid\0"                 Required_argument "g"
 		"system\0"              No_argument       "S"
 		;
-#endif
 
 /*
  * addgroup will take a login_name as its first parameter.
@@ -124,23 +142,26 @@ static const char addgroup_longopts[] ALIGN1 =
 int addgroup_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 int addgroup_main(int argc UNUSED_PARAM, char **argv)
 {
+#if ENABLE_FEATURE_ADDUSER_TO_GROUP
 	unsigned opts;
-	unsigned gid = 0;
+#endif
+	const char *gid = "0";
 
 	/* need to be root */
 	if (geteuid()) {
 		bb_error_msg_and_die(bb_msg_perm_denied_are_you_root);
 	}
-#if ENABLE_FEATURE_ADDGROUP_LONG_OPTIONS
-	applet_long_options = addgroup_longopts;
-#endif
 	/* Syntax:
 	 *  addgroup group
-	 *  addgroup -g num group
+	 *  addgroup --gid num group
 	 *  addgroup user group
 	 * Check for min, max and missing args */
-	opt_complementary = "-1:?2:g+";
-	opts = getopt32(argv, "g:S", &gid);
+#if ENABLE_FEATURE_ADDUSER_TO_GROUP
+	opts =
+#endif
+	getopt32long(argv, "^" "g:S" "\0" "-1:?2", addgroup_longopts,
+				&gid
+	);
 	/* move past the commandline options */
 	argv += optind;
 	//argc -= optind;
@@ -160,7 +181,7 @@ int addgroup_main(int argc UNUSED_PARAM, char **argv)
 		gr = xgetgrnam(argv[1]); /* unknown group: exit */
 		/* check if user is already in this group */
 		for (; *(gr->gr_mem) != NULL; (gr->gr_mem)++) {
-			if (!strcmp(argv[0], *(gr->gr_mem))) {
+			if (strcmp(argv[0], *(gr->gr_mem)) == 0) {
 				/* user is already in group: do nothing */
 				return EXIT_SUCCESS;
 			}
@@ -175,7 +196,7 @@ int addgroup_main(int argc UNUSED_PARAM, char **argv)
 #endif /* ENABLE_FEATURE_ADDUSER_TO_GROUP */
 	{
 		die_if_bad_username(argv[0]);
-		new_group(argv[0], gid);
+		new_group(argv[0], xatou_range(gid, 0, CONFIG_LAST_ID));
 	}
 	/* Reached only on success */
 	return EXIT_SUCCESS;

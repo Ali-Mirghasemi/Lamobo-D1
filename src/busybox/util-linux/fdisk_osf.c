@@ -18,7 +18,7 @@
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ''AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
  * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
@@ -366,10 +366,11 @@ bsd_select(void)
 			}
 				printf("Reading disklabel of %s at sector %u\n",
 					partname(disk_device, t+1, 0), ss + BSD_LABELSECTOR);
-			if (xbsd_readlabel(xbsd_part) == 0)
+			if (xbsd_readlabel(xbsd_part) == 0) {
 				if (xbsd_create_disklabel() == 0)
 					return;
 				break;
+			}
 		}
 	}
 
@@ -708,6 +709,9 @@ sync_disks(void)
 static void
 xbsd_write_bootstrap(void)
 {
+#ifndef MAXPATHLEN
+# define MAXPATHLEN 1024
+#endif
 	char path[MAXPATHLEN];
 	const char *bootdir = BSD_LINUX_BOOTDIR;
 	const char *dkbasename;
@@ -854,7 +858,7 @@ xbsd_initlabel(struct partition *p)
 
 	d->d_magic = BSD_DISKMAGIC;
 
-	if (strncmp(disk_device, "/dev/sd", 7) == 0)
+	if (is_prefixed_with(disk_device, "/dev/sd"))
 		d->d_type = BSD_DTYPE_SCSI;
 	else
 		d->d_type = BSD_DTYPE_ST506;
@@ -898,8 +902,7 @@ xbsd_initlabel(struct partition *p)
 	pp->p_fstype = BSD_FS_UNUSED;
 #else
 	d->d_npartitions = 3;
-	pp = &d->d_partitions[2];             /* Partition C should be
-						   the whole disk */
+	pp = &d->d_partitions[2]; /* Partition C should be the whole disk */
 	pp->p_offset = 0;
 	pp->p_size   = d->d_secperunit;
 	pp->p_fstype = BSD_FS_UNUSED;
@@ -935,7 +938,7 @@ xbsd_readlabel(struct partition *p)
 		fdisk_fatal(unable_to_read);
 
 	memmove(d, &disklabelbuffer[BSD_LABELSECTOR * SECTOR_SIZE + BSD_LABELOFFSET],
-		   sizeof(struct xbsd_disklabel));
+			sizeof(struct xbsd_disklabel));
 
 	if (d->d_magic != BSD_DISKMAGIC || d->d_magic2 != BSD_DISKMAGIC)
 		return 0;

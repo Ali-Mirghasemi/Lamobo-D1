@@ -13,7 +13,7 @@ modification, are permitted provided that the following conditions are met:
    3. The name of the author may not be used to endorse or promote products
       derived from this software without specific prior written permission.
 
-THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR ''AS IS'' AND ANY EXPRESS OR IMPLIED
 WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
 EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
@@ -26,7 +26,51 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 /* Busyboxed by Denys Vlasenko <vda.linux@googlemail.com> */
-/* Dependencies on runit_lib.c removed */
+
+//config:config CHPST
+//config:	bool "chpst (9 kb)"
+//config:	default y
+//config:	help
+//config:	chpst changes the process state according to the given options, and
+//config:	execs specified program.
+//config:
+//config:config SETUIDGID
+//config:	bool "setuidgid (4 kb)"
+//config:	default y
+//config:	help
+//config:	Sets soft resource limits as specified by options
+//config:
+//config:config ENVUIDGID
+//config:	bool "envuidgid (3.9 kb)"
+//config:	default y
+//config:	help
+//config:	Sets $UID to account's uid and $GID to account's gid
+//config:
+//config:config ENVDIR
+//config:	bool "envdir (2.5 kb)"
+//config:	default y
+//config:	help
+//config:	Sets various environment variables as specified by files
+//config:	in the given directory
+//config:
+//config:config SOFTLIMIT
+//config:	bool "softlimit (4.5 kb)"
+//config:	default y
+//config:	help
+//config:	Sets soft resource limits as specified by options
+
+//applet:IF_CHPST(    APPLET_NOEXEC(chpst,     chpst, BB_DIR_USR_BIN, BB_SUID_DROP, chpst))
+//                    APPLET_NOEXEC:name       main   location        suid_type     help
+//applet:IF_ENVDIR(   APPLET_NOEXEC(envdir,    chpst, BB_DIR_USR_BIN, BB_SUID_DROP, envdir))
+//applet:IF_ENVUIDGID(APPLET_NOEXEC(envuidgid, chpst, BB_DIR_USR_BIN, BB_SUID_DROP, envuidgid))
+//applet:IF_SETUIDGID(APPLET_NOEXEC(setuidgid, chpst, BB_DIR_USR_BIN, BB_SUID_DROP, setuidgid))
+//applet:IF_SOFTLIMIT(APPLET_NOEXEC(softlimit, chpst, BB_DIR_USR_BIN, BB_SUID_DROP, softlimit))
+
+//kbuild:lib-$(CONFIG_CHPST) += chpst.o
+//kbuild:lib-$(CONFIG_ENVDIR) += chpst.o
+//kbuild:lib-$(CONFIG_ENVUIDGID) += chpst.o
+//kbuild:lib-$(CONFIG_SETUIDGID) += chpst.o
+//kbuild:lib-$(CONFIG_SOFTLIMIT) += chpst.o
 
 //usage:#define chpst_trivial_usage
 //usage:       "[-vP012] [-u USER[:GRP]] [-U USER[:GRP]] [-e DIR]\n"
@@ -211,8 +255,7 @@ static NOINLINE void edir(const char *directory_name)
 		xsetenv(d->d_name, buf);
 	}
 	closedir(dir);
-	if (fchdir(wdir) == -1)
-		bb_perror_msg_and_die("fchdir");
+	xfchdir(wdir);
 	close(wdir);
 }
 
@@ -235,7 +278,6 @@ int chpst_main(int argc UNUSED_PARAM, char **argv)
 {
 	struct bb_uidgid_t ugid;
 	char *set_user = set_user; /* for compiler */
-	char *env_user = env_user;
 	char *env_dir = env_dir;
 	char *root;
 	char *nicestr;
@@ -258,12 +300,13 @@ int chpst_main(int argc UNUSED_PARAM, char **argv)
 		// FIXME: can we live with int-sized limits?
 		// can we live with 40000 days?
 		// if yes -> getopt converts strings to numbers for us
-		opt_complementary = "-1:a+:c+:d+:f+:l+:m+:o+:p+:r+:s+:t+";
-		opt = getopt32(argv, "+a:c:d:f:l:m:o:p:r:s:t:u:U:e:"
-			IF_CHPST("/:n:vP012"),
+		opt = getopt32(argv, "^+"
+			"a:+c:+d:+f:+l:+m:+o:+p:+r:+s:+t:+u:U:e:"
+			IF_CHPST("/:n:vP012")
+			"\0" "-1",
 			&limita, &limitc, &limitd, &limitf, &limitl,
 			&limitm, &limito, &limitp, &limitr, &limits, &limitt,
-			&set_user, &env_user, &env_dir
+			&set_user, &set_user, &env_dir
 			IF_CHPST(, &root, &nicestr));
 		argv += optind;
 		if (opt & OPT_m) { // -m means -asld
@@ -291,7 +334,7 @@ int chpst_main(int argc UNUSED_PARAM, char **argv)
 
 	// envuidgid?
 	if (ENABLE_ENVUIDGID && applet_name[0] == 'e' && applet_name[3] == 'u') {
-		env_user = *argv++;
+		set_user = *argv++;
 		opt |= OPT_U;
 	}
 
@@ -420,17 +463,18 @@ int chpst_main(int argc UNUSED_PARAM, char **argv)
 		xchroot(root);
 	}
 
+	/* nice should be done before xsetuid */
+	if (opt & OPT_n) {
+		errno = 0;
+		if (nice(xatoi(nicestr)) == -1)
+			bb_perror_msg_and_die("nice");
+	}
+
 	if (opt & OPT_u) {
 		if (setgroups(1, &ugid.gid) == -1)
 			bb_perror_msg_and_die("setgroups");
 		xsetgid(ugid.gid);
 		xsetuid(ugid.uid);
-	}
-
-	if (opt & OPT_n) {
-		errno = 0;
-		if (nice(xatoi(nicestr)) == -1)
-			bb_perror_msg_and_die("nice");
 	}
 
 	if (opt & OPT_0)

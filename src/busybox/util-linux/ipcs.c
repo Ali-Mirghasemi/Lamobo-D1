@@ -7,22 +7,17 @@
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
+//config:config IPCS
+//config:	bool "ipcs (11 kb)"
+//config:	default y
+//config:	select PLATFORM_LINUX
+//config:	help
+//config:	The ipcs utility is used to provide information on the currently
+//config:	allocated System V interprocess (IPC) objects in the system.
 
-//usage:#define ipcs_trivial_usage
-//usage:       "[[-smq] -i shmid] | [[-asmq] [-tcplu]]"
-//usage:#define ipcs_full_usage "\n\n"
-//usage:       "	-i	Show specific resource"
-//usage:     "\nResource specification:"
-//usage:     "\n	-m	Shared memory segments"
-//usage:     "\n	-q	Message queues"
-//usage:     "\n	-s	Semaphore arrays"
-//usage:     "\n	-a	All (default)"
-//usage:     "\nOutput format:"
-//usage:     "\n	-t	Time"
-//usage:     "\n	-c	Creator"
-//usage:     "\n	-p	Pid"
-//usage:     "\n	-l	Limits"
-//usage:     "\n	-u	Summary"
+//applet:IF_IPCS(APPLET_NOEXEC(ipcs, ipcs, BB_DIR_USR_BIN, BB_SUID_DROP, ipcs))
+
+//kbuild:lib-$(CONFIG_IPCS) += ipcs.o
 
 /* X/OPEN tells us to use <sys/{types,ipc,sem}.h> for semctl() */
 /* X/OPEN tells us to use <sys/{types,ipc,msg}.h> for msgctl() */
@@ -106,8 +101,6 @@ union semun {
 #define TIME 4
 #define PID 5
 
-static char format;
-
 static void print_perms(int id, struct ipc_perm *ipcp)
 {
 	struct passwd *pw;
@@ -130,8 +123,7 @@ static void print_perms(int id, struct ipc_perm *ipcp)
 	else	printf(" %-10d\n", ipcp->gid);
 }
 
-
-static NOINLINE void do_shm(void)
+static NOINLINE void do_shm(int format)
 {
 	int maxid, shmid, id;
 	struct shmid_ds shmseg;
@@ -152,54 +144,54 @@ static NOINLINE void do_shm(void)
 		if ((shmctl(0, IPC_INFO, (struct shmid_ds *) (void *) &shminfo)) < 0)
 			return;
 		/* glibc 2.1.3 and all earlier libc's have ints as fields
-		   of struct shminfo; glibc 2.1.91 has unsigned long; ach */
+		 * of struct shminfo; glibc 2.1.91 has unsigned long; ach */
 		printf("max number of segments = %lu\n"
-				  "max seg size (kbytes) = %lu\n"
-				  "max total shared memory (pages) = %lu\n"
-				  "min seg size (bytes) = %lu\n",
-				  (unsigned long) shminfo.shmmni,
-				  (unsigned long) (shminfo.shmmax >> 10),
-				  (unsigned long) shminfo.shmall,
-				  (unsigned long) shminfo.shmmin);
+				"max seg size (kbytes) = %lu\n"
+				"max total shared memory (pages) = %lu\n"
+				"min seg size (bytes) = %lu\n",
+				(unsigned long) shminfo.shmmni,
+				(unsigned long) (shminfo.shmmax >> 10),
+				(unsigned long) shminfo.shmall,
+				(unsigned long) shminfo.shmmin);
 		return;
 
 	case STATUS:
 		printf("------ Shared Memory %s --------\n", "Status");
-		printf(	  "segments allocated %d\n"
-				  "pages allocated %ld\n"
-				  "pages resident  %ld\n"
-				  "pages swapped   %ld\n"
-				  "Swap performance: %ld attempts\t%ld successes\n",
-				  shm_info.used_ids,
-				  shm_info.shm_tot,
-				  shm_info.shm_rss,
-				  shm_info.shm_swp,
-				  shm_info.swap_attempts, shm_info.swap_successes);
+		printf("segments allocated %d\n"
+				"pages allocated %lu\n"
+				"pages resident  %lu\n"
+				"pages swapped   %lu\n"
+				"Swap performance: %lu attempts\t%lu successes\n",
+				shm_info.used_ids,
+				shm_info.shm_tot,
+				shm_info.shm_rss,
+				shm_info.shm_swp,
+				shm_info.swap_attempts, shm_info.swap_successes);
 		return;
 
 	case CREATOR:
 		printf("------ Shared Memory %s --------\n", "Segment Creators/Owners");
-		printf(	  "%-10s %-10s %-10s %-10s %-10s %-10s\n",
-				  "shmid", "perms", "cuid", "cgid", "uid", "gid");
+		printf("%-10s %-10s %-10s %-10s %-10s %-10s\n",
+				"shmid", "perms", "cuid", "cgid", "uid", "gid");
 		break;
 
 	case TIME:
 		printf("------ Shared Memory %s --------\n", "Attach/Detach/Change Times");
-		printf(	  "%-10s %-10s %-20s %-20s %-20s\n",
-				  "shmid", "owner", "attached", "detached", "changed");
+		printf("%-10s %-10s %-20s %-20s %-20s\n",
+				"shmid", "owner", "attached", "detached", "changed");
 		break;
 
 	case PID:
 		printf("------ Shared Memory %s --------\n", "Creator/Last-op");
-		printf(	  "%-10s %-10s %-10s %-10s\n",
-				  "shmid", "owner", "cpid", "lpid");
+		printf("%-10s %-10s %-10s %-10s\n",
+				"shmid", "owner", "cpid", "lpid");
 		break;
 
 	default:
 		printf("------ Shared Memory %s --------\n", "Segments");
-		printf(	  "%-10s %-10s %-10s %-10s %-10s %-10s %-12s\n",
-				  "key", "shmid", "owner", "perms", "bytes", "nattch",
-				  "status");
+		printf("%-10s %-10s %-10s %-10s %-10s %-10s %-12s\n",
+				"key", "shmid", "owner", "perms", "bytes", "nattch",
+				"status");
 		break;
 	}
 
@@ -220,11 +212,11 @@ static NOINLINE void do_shm(void)
 				printf("%-10d %-10d", shmid, ipcp->uid);
 			/* ctime uses static buffer: use separate calls */
 			printf(" %-20.16s", shmseg.shm_atime
-					  ? ctime(&shmseg.shm_atime) + 4 : "Not set");
+					? ctime(&shmseg.shm_atime) + 4 : "Not set");
 			printf(" %-20.16s", shmseg.shm_dtime
-					  ? ctime(&shmseg.shm_dtime) + 4 : "Not set");
+					? ctime(&shmseg.shm_dtime) + 4 : "Not set");
 			printf(" %-20.16s\n", shmseg.shm_ctime
-					  ? ctime(&shmseg.shm_ctime) + 4 : "Not set");
+					? ctime(&shmseg.shm_ctime) + 4 : "Not set");
 			break;
 		case PID:
 			if (pw)
@@ -241,24 +233,23 @@ static NOINLINE void do_shm(void)
 			else
 				printf("%-10d %-10d", shmid, ipcp->uid);
 			printf(" %-10o %-10lu %-10ld %-6s %-6s\n", ipcp->mode & 0777,
-					  /*
-					   * earlier: int, Austin has size_t
-					   */
-					  (unsigned long) shmseg.shm_segsz,
-					  /*
-					   * glibc-2.1.3 and earlier has unsigned short;
-					   * Austin has shmatt_t
-					   */
-					  (long) shmseg.shm_nattch,
-					  ipcp->mode & SHM_DEST ? "dest" : " ",
-					  ipcp->mode & SHM_LOCKED ? "locked" : " ");
+					/*
+					 * earlier: int, Austin has size_t
+					 */
+					(unsigned long) shmseg.shm_segsz,
+					/*
+					 * glibc-2.1.3 and earlier has unsigned short;
+					 * Austin has shmatt_t
+					 */
+					(long) shmseg.shm_nattch,
+					ipcp->mode & SHM_DEST ? "dest" : " ",
+					ipcp->mode & SHM_LOCKED ? "locked" : " ");
 			break;
 		}
 	}
 }
 
-
-static NOINLINE void do_sem(void)
+static NOINLINE void do_sem(int format)
 {
 	int maxid, semid, id;
 	struct semid_ds semary;
@@ -281,32 +272,32 @@ static NOINLINE void do_sem(void)
 		if ((semctl(0, 0, IPC_INFO, arg)) < 0)
 			return;
 		printf("max number of arrays = %d\n"
-				  "max semaphores per array = %d\n"
-				  "max semaphores system wide = %d\n"
-				  "max ops per semop call = %d\n"
-				  "semaphore max value = %d\n",
-				  seminfo.semmni,
-				  seminfo.semmsl,
-				  seminfo.semmns, seminfo.semopm, seminfo.semvmx);
+				"max semaphores per array = %d\n"
+				"max semaphores system wide = %d\n"
+				"max ops per semop call = %d\n"
+				"semaphore max value = %d\n",
+				seminfo.semmni,
+				seminfo.semmsl,
+				seminfo.semmns, seminfo.semopm, seminfo.semvmx);
 		return;
 
 	case STATUS:
 		printf("------ Semaphore %s --------\n", "Status");
-		printf(	  "used arrays = %d\n"
-				  "allocated semaphores = %d\n",
-				  seminfo.semusz, seminfo.semaem);
+		printf("used arrays = %d\n"
+				"allocated semaphores = %d\n",
+				seminfo.semusz, seminfo.semaem);
 		return;
 
 	case CREATOR:
 		printf("------ Semaphore %s --------\n", "Arrays Creators/Owners");
-		printf(	  "%-10s %-10s %-10s %-10s %-10s %-10s\n",
-				  "semid", "perms", "cuid", "cgid", "uid", "gid");
+		printf("%-10s %-10s %-10s %-10s %-10s %-10s\n",
+				"semid", "perms", "cuid", "cgid", "uid", "gid");
 		break;
 
 	case TIME:
 		printf("------ Shared Memory %s --------\n", "Operation/Change Times");
-		printf(	  "%-8s %-10s %-26.24s %-26.24s\n",
-				  "shmid", "owner", "last-op", "last-changed");
+		printf("%-8s %-10s %-26.24s %-26.24s\n",
+				"shmid", "owner", "last-op", "last-changed");
 		break;
 
 	case PID:
@@ -314,8 +305,8 @@ static NOINLINE void do_sem(void)
 
 	default:
 		printf("------ Semaphore %s --------\n", "Arrays");
-		printf(	  "%-10s %-10s %-10s %-10s %-10s\n",
-				  "key", "semid", "owner", "perms", "nsems");
+		printf("%-10s %-10s %-10s %-10s %-10s\n",
+				"key", "semid", "owner", "perms", "nsems");
 		break;
 	}
 
@@ -337,9 +328,9 @@ static NOINLINE void do_sem(void)
 				printf("%-8d %-10d", semid, ipcp->uid);
 			/* ctime uses static buffer: use separate calls */
 			printf("  %-26.24s", semary.sem_otime
-					  ? ctime(&semary.sem_otime) : "Not set");
+					? ctime(&semary.sem_otime) : "Not set");
 			printf(" %-26.24s\n", semary.sem_ctime
-					  ? ctime(&semary.sem_ctime) : "Not set");
+					? ctime(&semary.sem_ctime) : "Not set");
 			break;
 		case PID:
 			break;
@@ -351,20 +342,19 @@ static NOINLINE void do_sem(void)
 			else
 				printf("%-10d %-9d", semid, ipcp->uid);
 			printf(" %-10o %-10ld\n", ipcp->mode & 0777,
-					  /*
-					   * glibc-2.1.3 and earlier has unsigned short;
-					   * glibc-2.1.91 has variation between
-					   * unsigned short and unsigned long
-					   * Austin prescribes unsigned short.
-					   */
-					  (long) semary.sem_nsems);
+					/*
+					 * glibc-2.1.3 and earlier has unsigned short;
+					 * glibc-2.1.91 has variation between
+					 * unsigned short and unsigned long
+					 * Austin prescribes unsigned short.
+					 */
+					(long) semary.sem_nsems);
 			break;
 		}
 	}
 }
 
-
-static NOINLINE void do_msg(void)
+static NOINLINE void do_msg(int format)
 {
 	int maxid, msqid, id;
 	struct msqid_ds msgque;
@@ -383,42 +373,42 @@ static NOINLINE void do_msg(void)
 		if ((msgctl(0, IPC_INFO, (struct msqid_ds *) (void *) &msginfo)) < 0)
 			return;
 		printf("------ Message%s --------\n", "s: Limits");
-		printf(	  "max queues system wide = %d\n"
-				  "max size of message (bytes) = %d\n"
-				  "default max size of queue (bytes) = %d\n",
-				  msginfo.msgmni, msginfo.msgmax, msginfo.msgmnb);
+		printf("max queues system wide = %d\n"
+				"max size of message (bytes) = %d\n"
+				"default max size of queue (bytes) = %d\n",
+				msginfo.msgmni, msginfo.msgmax, msginfo.msgmnb);
 		return;
 
 	case STATUS:
 		printf("------ Message%s --------\n", "s: Status");
-		printf(	  "allocated queues = %d\n"
-				  "used headers = %d\n"
-				  "used space = %d bytes\n",
-				  msginfo.msgpool, msginfo.msgmap, msginfo.msgtql);
+		printf("allocated queues = %d\n"
+				"used headers = %d\n"
+				"used space = %d bytes\n",
+				msginfo.msgpool, msginfo.msgmap, msginfo.msgtql);
 		return;
 
 	case CREATOR:
 		printf("------ Message%s --------\n", " Queues: Creators/Owners");
-		printf(	  "%-10s %-10s %-10s %-10s %-10s %-10s\n",
-				  "msqid", "perms", "cuid", "cgid", "uid", "gid");
+		printf("%-10s %-10s %-10s %-10s %-10s %-10s\n",
+				"msqid", "perms", "cuid", "cgid", "uid", "gid");
 		break;
 
 	case TIME:
 		printf("------ Message%s --------\n", " Queues Send/Recv/Change Times");
-		printf(	  "%-8s %-10s %-20s %-20s %-20s\n",
-				  "msqid", "owner", "send", "recv", "change");
+		printf("%-8s %-10s %-20s %-20s %-20s\n",
+				"msqid", "owner", "send", "recv", "change");
 		break;
 
 	case PID:
 		printf("------ Message%s --------\n", " Queues PIDs");
-		printf(	  "%-10s %-10s %-10s %-10s\n",
-				  "msqid", "owner", "lspid", "lrpid");
+		printf("%-10s %-10s %-10s %-10s\n",
+				"msqid", "owner", "lspid", "lrpid");
 		break;
 
 	default:
 		printf("------ Message%s --------\n", " Queues");
-		printf(	  "%-10s %-10s %-10s %-10s %-12s %-12s\n",
-				  "key", "msqid", "owner", "perms", "used-bytes", "messages");
+		printf("%-10s %-10s %-10s %-10s %-12s %-12s\n",
+				"key", "msqid", "owner", "perms", "used-bytes", "messages");
 		break;
 	}
 
@@ -438,11 +428,11 @@ static NOINLINE void do_msg(void)
 			else
 				printf("%-8d %-10d", msqid, ipcp->uid);
 			printf(" %-20.16s", msgque.msg_stime
-					  ? ctime(&msgque.msg_stime) + 4 : "Not set");
+					? ctime(&msgque.msg_stime) + 4 : "Not set");
 			printf(" %-20.16s", msgque.msg_rtime
-					  ? ctime(&msgque.msg_rtime) + 4 : "Not set");
+					? ctime(&msgque.msg_rtime) + 4 : "Not set");
 			printf(" %-20.16s\n", msgque.msg_ctime
-					  ? ctime(&msgque.msg_ctime) + 4 : "Not set");
+					? ctime(&msgque.msg_ctime) + 4 : "Not set");
 			break;
 		case PID:
 			if (pw)
@@ -459,18 +449,17 @@ static NOINLINE void do_msg(void)
 			else
 				printf("%-10d %-10d", msqid, ipcp->uid);
 			printf(" %-10o %-12ld %-12ld\n", ipcp->mode & 0777,
-					  /*
-					   * glibc-2.1.3 and earlier has unsigned short;
-					   * glibc-2.1.91 has variation between
-					   * unsigned short, unsigned long
-					   * Austin has msgqnum_t
-					   */
-					  (long) msgque.msg_cbytes, (long) msgque.msg_qnum);
+					/*
+					 * glibc-2.1.3 and earlier has unsigned short;
+					 * glibc-2.1.91 has variation between
+					 * unsigned short, unsigned long
+					 * Austin has msgqnum_t
+					 */
+					(long) msgque.msg_cbytes, (long) msgque.msg_qnum);
 			break;
 		}
 	}
 }
-
 
 static void print_shm(int shmid)
 {
@@ -483,21 +472,20 @@ static void print_shm(int shmid)
 	}
 
 	printf("\nShared memory Segment shmid=%d\n"
-			  "uid=%d\tgid=%d\tcuid=%d\tcgid=%d\n"
-			  "mode=%#o\taccess_perms=%#o\n"
-			  "bytes=%ld\tlpid=%d\tcpid=%d\tnattch=%ld\n",
-			  shmid,
-			  ipcp->uid, ipcp->gid, ipcp->cuid, ipcp->cgid,
-			  ipcp->mode, ipcp->mode & 0777,
-			  (long) shmds.shm_segsz, shmds.shm_lpid, shmds.shm_cpid,
-			  (long) shmds.shm_nattch);
+			"uid=%d\tgid=%d\tcuid=%d\tcgid=%d\n"
+			"mode=%#o\taccess_perms=%#o\n"
+			"bytes=%ld\tlpid=%d\tcpid=%d\tnattch=%ld\n",
+			shmid,
+			ipcp->uid, ipcp->gid, ipcp->cuid, ipcp->cgid,
+			ipcp->mode, ipcp->mode & 0777,
+			(long) shmds.shm_segsz, shmds.shm_lpid, shmds.shm_cpid,
+			(long) shmds.shm_nattch);
 	printf("att_time=%-26.24s\n",
-			  shmds.shm_atime ? ctime(&shmds.shm_atime) : "Not set");
+			shmds.shm_atime ? ctime(&shmds.shm_atime) : "Not set");
 	printf("det_time=%-26.24s\n",
-			  shmds.shm_dtime ? ctime(&shmds.shm_dtime) : "Not set");
+			shmds.shm_dtime ? ctime(&shmds.shm_dtime) : "Not set");
 	printf("change_time=%-26.24s\n\n", ctime(&shmds.shm_ctime));
 }
-
 
 static void print_msg(int msqid)
 {
@@ -510,24 +498,24 @@ static void print_msg(int msqid)
 	}
 
 	printf("\nMessage Queue msqid=%d\n"
-			  "uid=%d\tgid=%d\tcuid=%d\tcgid=%d\tmode=%#o\n"
-			  "cbytes=%ld\tqbytes=%ld\tqnum=%ld\tlspid=%d\tlrpid=%d\n",
-			  msqid, ipcp->uid, ipcp->gid, ipcp->cuid, ipcp->cgid, ipcp->mode,
-			  /*
-			   * glibc-2.1.3 and earlier has unsigned short;
-			   * glibc-2.1.91 has variation between
-			   * unsigned short, unsigned long
-			   * Austin has msgqnum_t (for msg_qbytes)
-			   */
-			  (long) buf.msg_cbytes, (long) buf.msg_qbytes,
-			  (long) buf.msg_qnum, buf.msg_lspid, buf.msg_lrpid);
+			"uid=%d\tgid=%d\tcuid=%d\tcgid=%d\tmode=%#o\n"
+			"cbytes=%ld\tqbytes=%ld\tqnum=%ld\tlspid=%d\tlrpid=%d\n",
+			msqid, ipcp->uid, ipcp->gid, ipcp->cuid, ipcp->cgid, ipcp->mode,
+			/*
+			 * glibc-2.1.3 and earlier has unsigned short;
+			 * glibc-2.1.91 has variation between
+			 * unsigned short, unsigned long
+			 * Austin has msgqnum_t (for msg_qbytes)
+			 */
+			(long) buf.msg_cbytes, (long) buf.msg_qbytes,
+			(long) buf.msg_qnum, buf.msg_lspid, buf.msg_lrpid);
 
 	printf("send_time=%-26.24s\n",
-			  buf.msg_stime ? ctime(&buf.msg_stime) : "Not set");
+			buf.msg_stime ? ctime(&buf.msg_stime) : "Not set");
 	printf("rcv_time=%-26.24s\n",
-			  buf.msg_rtime ? ctime(&buf.msg_rtime) : "Not set");
+			buf.msg_rtime ? ctime(&buf.msg_rtime) : "Not set");
 	printf("change_time=%-26.24s\n\n",
-			  buf.msg_ctime ? ctime(&buf.msg_ctime) : "Not set");
+			buf.msg_ctime ? ctime(&buf.msg_ctime) : "Not set");
 }
 
 static void print_sem(int semid)
@@ -544,19 +532,19 @@ static void print_sem(int semid)
 	}
 
 	printf("\nSemaphore Array semid=%d\n"
-			  "uid=%d\t gid=%d\t cuid=%d\t cgid=%d\n"
-			  "mode=%#o, access_perms=%#o\n"
-			  "nsems = %ld\n"
-			  "otime = %-26.24s\n",
-			  semid,
-			  ipcp->uid, ipcp->gid, ipcp->cuid, ipcp->cgid,
-			  ipcp->mode, ipcp->mode & 0777,
-			  (long) semds.sem_nsems,
-			  semds.sem_otime ? ctime(&semds.sem_otime) : "Not set");
+			"uid=%d\t gid=%d\t cuid=%d\t cgid=%d\n"
+			"mode=%#o, access_perms=%#o\n"
+			"nsems = %ld\n"
+			"otime = %-26.24s\n",
+			semid,
+			ipcp->uid, ipcp->gid, ipcp->cuid, ipcp->cgid,
+			ipcp->mode, ipcp->mode & 0777,
+			(long) semds.sem_nsems,
+			semds.sem_otime ? ctime(&semds.sem_otime) : "Not set");
 	printf("ctime = %-26.24s\n"
-			  "%-10s %-10s %-10s %-10s %-10s\n",
-			  ctime(&semds.sem_ctime),
-			  "semnum", "value", "ncount", "zcount", "pid");
+			"%-10s %-10s %-10s %-10s %-10s\n",
+			ctime(&semds.sem_ctime),
+			"semnum", "value", "ncount", "zcount", "pid");
 
 	arg.val = 0;
 	for (i = 0; i < semds.sem_nsems; i++) {
@@ -569,68 +557,81 @@ static void print_sem(int semid)
 		if (val < 0 || ncnt < 0 || zcnt < 0 || pid < 0) {
 			bb_perror_msg_and_die("semctl");
 		}
-		printf("%-10d %-10d %-10d %-10d %-10d\n", i, val, ncnt, zcnt, pid);
+		printf("%-10u %-10d %-10d %-10d %-10d\n", i, val, ncnt, zcnt, pid);
 	}
 	bb_putchar('\n');
 }
 
+//usage:#define ipcs_trivial_usage
+//usage:       "[[-smq] -i SHMID] | [[-asmq] [-tcplu]]"
+//usage:#define ipcs_full_usage "\n\n"
+//usage:       "	-i ID	Show specific resource"
+//usage:     "\nResource specification:"
+//usage:     "\n	-m	Shared memory segments"
+//usage:     "\n	-q	Message queues"
+//usage:     "\n	-s	Semaphore arrays"
+//usage:     "\n	-a	All (default)"
+//usage:     "\nOutput format:"
+//usage:     "\n	-t	Time"
+//usage:     "\n	-c	Creator"
+//usage:     "\n	-p	Pid"
+//usage:     "\n	-l	Limits"
+//usage:     "\n	-u	Summary"
+
 int ipcs_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 int ipcs_main(int argc UNUSED_PARAM, char **argv)
 {
-	int id = 0;
-	unsigned flags = 0;
+	int format = 0;
 	unsigned opt;
 	char *opt_i;
-#define flag_print	(1<<0)
-#define flag_msg	(1<<1)
-#define flag_sem	(1<<2)
-#define flag_shm	(1<<3)
 
 	opt = getopt32(argv, "i:aqsmtcplu", &opt_i);
-	if (opt & 0x1) { // -i
-		id = xatoi(opt_i);
-		flags |= flag_print;
-	}
-	if (opt & 0x2) flags |= flag_msg | flag_sem | flag_shm; // -a
-	if (opt & 0x4) flags |= flag_msg; // -q
-	if (opt & 0x8) flags |= flag_sem; // -s
-	if (opt & 0x10) flags |= flag_shm; // -m
-	if (opt & 0x20) format = TIME; // -t
-	if (opt & 0x40) format = CREATOR; // -c
-	if (opt & 0x80) format = PID; // -p
-	if (opt & 0x100) format = LIMITS; // -l
-	if (opt & 0x200) format = STATUS; // -u
+#define flag_msg (1<<2)
+#define flag_sem (1<<3)
+#define flag_shm (1<<4)
+	if (opt & (1<<5)) format = TIME; // -t
+	if (opt & (1<<6)) format = CREATOR; // -c
+	if (opt & (1<<7)) format = PID; // -p
+	if (opt & (1<<8)) format = LIMITS; // -l
+	if (opt & (1<<9)) format = STATUS; // -u
 
-	if (flags & flag_print) {
-		if (flags & flag_shm) {
+	if (opt & (1<<0)) { // -i
+		int id;
+
+		id = xatoi(opt_i);
+		if (opt & flag_shm) {
 			print_shm(id);
 			fflush_stdout_and_exit(EXIT_SUCCESS);
 		}
-		if (flags & flag_sem) {
+		if (opt & flag_sem) {
 			print_sem(id);
 			fflush_stdout_and_exit(EXIT_SUCCESS);
 		}
-		if (flags & flag_msg) {
+		if (opt & flag_msg) {
 			print_msg(id);
 			fflush_stdout_and_exit(EXIT_SUCCESS);
 		}
 		bb_show_usage();
 	}
 
-	if (!(flags & (flag_shm | flag_msg | flag_sem)))
-		flags |= flag_msg | flag_shm | flag_sem;
+	if ((opt & (1<<1)) // -a
+	 || !(opt & (flag_msg | flag_sem | flag_shm)) // none of -q,-s,-m == all
+	) {
+		opt |= flag_msg | flag_sem | flag_shm;
+	}
+
 	bb_putchar('\n');
 
-	if (flags & flag_shm) {
-		do_shm();
+	if (opt & flag_msg) {
+		do_msg(format);
 		bb_putchar('\n');
 	}
-	if (flags & flag_sem) {
-		do_sem();
+	if (opt & flag_shm) {
+		do_shm(format);
 		bb_putchar('\n');
 	}
-	if (flags & flag_msg) {
-		do_msg();
+	if (opt & flag_sem) {
+		do_sem(format);
 		bb_putchar('\n');
 	}
 	fflush_stdout_and_exit(EXIT_SUCCESS);

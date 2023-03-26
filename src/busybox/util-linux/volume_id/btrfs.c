@@ -18,6 +18,12 @@
  *	License along with this library; if not, write to the Free Software
  *	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
+//config:config FEATURE_VOLUMEID_BTRFS
+//config:	bool "btrfs filesystem"
+//config:	default y
+//config:	depends on VOLUMEID
+
+//kbuild:lib-$(CONFIG_FEATURE_VOLUMEID_BTRFS) += btrfs.o
 
 #include "volume_id_internal.h"
 
@@ -102,6 +108,7 @@ int FAST_FUNC volume_id_probe_btrfs(struct volume_id *id /*,uint64_t off*/)
 	// N.B.: btrfs natively supports 256 (>VOLUME_ID_LABEL_SIZE) size labels
 	volume_id_set_label_string(id, sb->label, VOLUME_ID_LABEL_SIZE);
 	volume_id_set_uuid(id, sb->fsid, UUID_DCE);
+	IF_FEATURE_BLKID_TYPE(id->type = "btrfs";)
 
 	return 0;
 }

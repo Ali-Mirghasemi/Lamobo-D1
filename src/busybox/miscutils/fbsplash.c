@@ -20,6 +20,31 @@
  *   "NN" (ASCII decimal number) - percentage to show on progress bar.
  *   "exit" (or just close fifo) - well you guessed it.
  */
+//config:config FBSPLASH
+//config:	bool "fbsplash (26 kb)"
+//config:	default y
+//config:	select PLATFORM_LINUX
+//config:	help
+//config:	Shows splash image and progress bar on framebuffer device.
+//config:	Can be used during boot phase of an embedded device.
+//config:	Usage:
+//config:	- use kernel option 'vga=xxx' or otherwise enable fb device.
+//config:	- put somewhere fbsplash.cfg file and an image in .ppm format.
+//config:	- $ setsid fbsplash [params] &
+//config:	    -c: hide cursor
+//config:	    -d /dev/fbN: framebuffer device (if not /dev/fb0)
+//config:	    -s path_to_image_file (can be "-" for stdin)
+//config:	    -i path_to_cfg_file (can be "-" for stdin)
+//config:	    -f path_to_fifo (can be "-" for stdin)
+//config:	- if you want to run it only in presence of kernel parameter:
+//config:	    grep -q "fbsplash=on" </proc/cmdline && setsid fbsplash [params] &
+//config:	- commands for fifo:
+//config:	    "NN" (ASCII decimal number) - percentage to show on progress bar
+//config:	    "exit" - well you guessed it
+
+//applet:IF_FBSPLASH(APPLET(fbsplash, BB_DIR_SBIN, BB_SUID_DROP))
+
+//kbuild:lib-$(CONFIG_FBSPLASH) += fbsplash.o
 
 //usage:#define fbsplash_trivial_usage
 //usage:       "-s IMGFILE [-c] [-d DEV] [-i INIFILE] [-f CMD]"
@@ -29,15 +54,18 @@
 //usage:     "\n	-d	Framebuffer device (default /dev/fb0)"
 //usage:     "\n	-i	Config file (var=value):"
 //usage:     "\n			BAR_LEFT,BAR_TOP,BAR_WIDTH,BAR_HEIGHT"
-//usage:     "\n			BAR_R,BAR_G,BAR_B"
+//usage:     "\n			BAR_R,BAR_G,BAR_B,IMG_LEFT,IMG_TOP"
 //usage:     "\n	-f	Control pipe (else exit after drawing image)"
 //usage:     "\n			commands: 'NN' (% for progress bar) or 'exit'"
 
 #include "libbb.h"
+#include "common_bufsiz.h"
 #include <linux/fb.h>
 
 /* If you want logging messages on /tmp/fbsplash.log... */
 #define DEBUG 0
+
+#define ESC "\033"
 
 struct globals {
 #if DEBUG
@@ -45,11 +73,15 @@ struct globals {
 	FILE *logfile_fd;	// log file
 #endif
 	unsigned char *addr;	// pointer to framebuffer memory
-	unsigned ns[7];		// n-parameters
+	unsigned ns[9];		// n-parameters
 	const char *image_filename;
 	struct fb_var_screeninfo scr_var;
 	struct fb_fix_screeninfo scr_fix;
 	unsigned bytes_per_pixel;
+	// cached (8 - scr_var.COLOR.length):
+	unsigned red_shift;
+	unsigned green_shift;
+	unsigned blue_shift;
 };
 #define G (*ptr_to_globals)
 #define INIT_G() do { \
@@ -63,6 +95,8 @@ struct globals {
 #define nbar_colr	ns[4]	// progress bar color red component
 #define nbar_colg	ns[5]	// progress bar color green component
 #define nbar_colb	ns[6]	// progress bar color blue component
+#define img_posx	ns[7]	// image horizontal position
+#define img_posy	ns[8]	// image vertical position
 
 #if DEBUG
 #define DEBUG_MESSAGE(strMessage, args...) \
@@ -139,11 +173,14 @@ static void fb_open(const char *strfb_device)
 		break;
 	}
 
+	G.red_shift   = 8 - G.scr_var.red.length;
+	G.green_shift = 8 - G.scr_var.green.length;
+	G.blue_shift  = 8 - G.scr_var.blue.length;
 	G.bytes_per_pixel = (G.scr_var.bits_per_pixel + 7) >> 3;
 
 	// map the device in memory
 	G.addr = mmap(NULL,
-		        G.scr_var.yres * G.scr_fix.line_length,
+			(G.scr_var.yres_virtual ?: G.scr_var.yres) * G.scr_fix.line_length,
 			PROT_WRITE, MAP_SHARED, fbfd, 0);
 	if (G.addr == MAP_FAILED)
 		bb_perror_msg_and_die("mmap");
@@ -155,10 +192,13 @@ static void fb_open(const char *strfb_device)
 
 
 /**
- * Return pixel value of the passed RGB color
+ * Return pixel value of the passed RGB color.
+ * This is performance critical fn.
  */
 static unsigned fb_pixel_value(unsigned r, unsigned g, unsigned b)
 {
+	/* We assume that the r,g,b values are <= 255 */
+
 	if (G.bytes_per_pixel == 1) {
 		r = r        & 0xe0; // 3-bit red
 		g = (g >> 3) & 0x1c; // 3-bit green
@@ -166,10 +206,17 @@ static unsigned fb_pixel_value(unsigned r, unsigned g, unsigned b)
 		return r + g + b;
 	}
 	if (G.bytes_per_pixel == 2) {
-		r = (r & 0xf8) << 8; // 5-bit red
-		g = (g & 0xfc) << 3; // 6-bit green
-		b =  b >> 3;         // 5-bit blue
-		return r + g + b;
+		// ARM PL110 on Integrator/CP has RGBA5551 bit arrangement.
+		// We want to support bit locations like that.
+		//
+		// First shift out unused bits
+		r = r >> G.red_shift;
+		g = g >> G.green_shift;
+		b = b >> G.blue_shift;
+		// Then shift the remaining bits to their offset
+		return (r << G.scr_var.red.offset) +
+			(g << G.scr_var.green.offset) +
+			(b << G.scr_var.blue.offset);
 	}
 	// RGB 888
 	return b + (g << 8) + (r << 16);
@@ -295,8 +342,7 @@ static void fb_drawprogressbar(unsigned percent)
 
 	pos_x = left_x;
 	if (percent > 0) {
-		int y;
-		unsigned i;
+		int i, y;
 
 		// actual progress bar
 		pos_x += (unsigned)(width * percent) / 100;
@@ -308,7 +354,7 @@ static void fb_drawprogressbar(unsigned percent)
 		while (i >= 0) {
 			// draw one-line thick "rectangle"
 			// top line will have gray lvl 200, bottom one 100
-			unsigned gray_level = 100 + i*100 / height;
+			unsigned gray_level = 100 + (unsigned)i*100 / height;
 			fb_drawfullrectangle(
 					left_x, y, pos_x, y,
 					gray_level, gray_level, gray_level);
@@ -337,7 +383,7 @@ static void fb_drawimage(void)
 	if (LONE_DASH(G.image_filename)) {
 		theme_file = stdin;
 	} else {
-		int fd = open_zipped(G.image_filename);
+		int fd = open_zipped(G.image_filename, /*fail_if_not_compressed:*/ 0);
 		if (fd < 0)
 			bb_simple_perror_msg_and_die(G.image_filename);
 		theme_file = xfdopen_for_read(fd);
@@ -357,10 +403,12 @@ static void fb_drawimage(void)
 	 *   in pure binary by 1 or 2 bytes. (we support only 1 byte)
 	 */
 #define concat_buf bb_common_bufsiz1
+	setup_common_bufsiz();
+
 	read_ptr = concat_buf;
 	while (1) {
 		int w, h, max_color_val;
-		int rem = concat_buf + sizeof(concat_buf) - read_ptr;
+		int rem = concat_buf + COMMON_BUFSIZE - read_ptr;
 		if (rem < 2
 		 || fgets(read_ptr, rem, theme_file) == NULL
 		) {
@@ -380,10 +428,10 @@ static void fb_drawimage(void)
 	line_size = width*3;
 	pixline = xmalloc(line_size);
 
-	if (width > G.scr_var.xres)
-		width = G.scr_var.xres;
-	if (height > G.scr_var.yres)
-		height = G.scr_var.yres;
+	if ((width + G.img_posx) > G.scr_var.xres)
+		width = G.scr_var.xres - G.img_posx;
+	if ((height + G.img_posy) > G.scr_var.yres)
+		height = G.scr_var.yres - G.img_posy;
 	for (j = 0; j < height; j++) {
 		unsigned char *pixel;
 		unsigned char *src;
@@ -391,7 +439,7 @@ static void fb_drawimage(void)
 		if (fread(pixline, 1, line_size, theme_file) != line_size)
 			bb_error_msg_and_die("bad PPM file '%s'", G.image_filename);
 		pixel = pixline;
-		src = G.addr + j * G.scr_fix.line_length;
+		src = G.addr + (G.img_posy + j) * G.scr_fix.line_length + G.img_posx * G.bytes_per_pixel;
 		for (i = 0; i < width; i++) {
 			unsigned thispix = fb_pixel_value(pixel[0], pixel[1], pixel[2]);
 			fb_write_pixel(src, thispix);
@@ -414,6 +462,7 @@ static void init(const char *cfg_filename)
 		"BAR_WIDTH\0" "BAR_HEIGHT\0"
 		"BAR_LEFT\0" "BAR_TOP\0"
 		"BAR_R\0" "BAR_G\0" "BAR_B\0"
+		"IMG_LEFT\0" "IMG_TOP\0"
 #if DEBUG
 		"DEBUG\0"
 #endif
@@ -426,10 +475,10 @@ static void init(const char *cfg_filename)
 		int i = index_in_strings(param_names, token[0]);
 		if (i < 0)
 			bb_error_msg_and_die("syntax error: %s", token[0]);
-		if (i >= 0 && i < 7)
+		if (i >= 0 && i < 9)
 			G.ns[i] = val;
 #if DEBUG
-		if (i == 7) {
+		if (i == 9) {
 			G.bdebug_messages = val;
 			if (G.bdebug_messages)
 				G.logfile_fd = xfopen_for_write("/tmp/fbsplash.log");
@@ -470,7 +519,7 @@ int fbsplash_main(int argc UNUSED_PARAM, char **argv)
 
 	if (fifo_filename && bCursorOff) {
 		// hide cursor (BEFORE any fb ops)
-		full_write(STDOUT_FILENO, "\033[?25l", 6);
+		full_write(STDOUT_FILENO, ESC"[?25l", 6);
 	}
 
 	fb_drawimage();
@@ -500,7 +549,7 @@ int fbsplash_main(int argc UNUSED_PARAM, char **argv)
 	// handle a case when we have many buffered lines
 	// already in the pipe
 	while ((num_buf = xmalloc_fgetline(fp)) != NULL) {
-		if (strncmp(num_buf, "exit", 4) == 0) {
+		if (is_prefixed_with(num_buf, "exit")) {
 			DEBUG_MESSAGE("exit");
 			break;
 		}
@@ -515,7 +564,7 @@ int fbsplash_main(int argc UNUSED_PARAM, char **argv)
 	}
 
 	if (bCursorOff) // restore cursor
-		full_write(STDOUT_FILENO, "\033[?25h", 6);
+		full_write(STDOUT_FILENO, ESC"[?25h", 6);
 
 	return EXIT_SUCCESS;
 }

@@ -8,7 +8,6 @@
  *
  * Licensed under GPLv2, see file LICENSE in this source tree.
  */
-
 #include "libbb.h"
 
 /* All known arches use small ints for signals */
@@ -32,6 +31,16 @@ int FAST_FUNC sigprocmask_allsigs(int how)
 	return sigprocmask(how, &set, NULL);
 }
 
+int FAST_FUNC sigprocmask2(int how, sigset_t *set)
+{
+	// Grr... gcc 8.1.1:
+	// "passing argument 3 to restrict-qualified parameter aliases with argument 2"
+	// dance around that...
+	sigset_t *oset FIX_ALIASING;
+	oset = set;
+	return sigprocmask(how, set, oset);
+}
+
 void FAST_FUNC bb_signals(int sigs, void (*f)(int))
 {
 	int sig_no = 0;
@@ -39,7 +48,7 @@ void FAST_FUNC bb_signals(int sigs, void (*f)(int))
 
 	while (sigs) {
 		if (sigs & bit) {
-			sigs &= ~bit;
+			sigs -= bit;
 			signal(sig_no, f);
 		}
 		sig_no++;
@@ -60,7 +69,7 @@ void FAST_FUNC bb_signals_recursive_norestart(int sigs, void (*f)(int))
 
 	while (sigs) {
 		if (sigs & bit) {
-			sigs &= ~bit;
+			sigs -= bit;
 			sigaction_set(sig_no, &sa);
 		}
 		sig_no++;
@@ -97,7 +106,7 @@ void FAST_FUNC kill_myself_with_sig(int sig)
 	signal(sig, SIG_DFL);
 	sig_unblock(sig);
 	raise(sig);
-	_exit(EXIT_FAILURE); /* Should not reach it */
+	_exit(sig | 128); /* Should not reach it */
 }
 
 void FAST_FUNC signal_SA_RESTART_empty_mask(int sig, void (*handler)(int))
