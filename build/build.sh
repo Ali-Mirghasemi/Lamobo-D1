@@ -1,13 +1,21 @@
 #!/bin/bash
 
+write_header() {
+    echo
+    echo "=============================================="
+    echo "          $1"
+    echo "=============================================="
+    echo
+}
+
 build_tools()
 {
-    echo Updating package list...
+    write_header "Updating package list..."
     $APT_GET update
 
-    echo Installing tools...
+    write_header "Installing tools..."
     $APT_GET install lzop zip
-    echo Installing libraries...
+    write_header "Installing libraries..."
     $APT_GET install mtd-utils liblzo2-dev liblzo2-2 liblzma5
 
     if [ ! -d $DEV_ROOT/compiler/arm-2009q3 ]; then
@@ -20,13 +28,13 @@ build_tools()
 
 clean_tools()
 {
-    echo Cleaning tools...
+    write_header "Cleaning tools..."
     $RM $DEV_ROOT/compiler/arm-2009q3
 }
 
 config_kernel()
 {
-    echo Configuring kernel...
+    write_header "Configuring kernel..."
     cd $DEV_ROOT/src/kernel
     $MKDIR $DEV_ROOT/output/kernel
     $MAKE O=$DEV_ROOT/output/kernel aimer39_ak3918_D1_defconfig
@@ -35,7 +43,7 @@ config_kernel()
 
 build_kernel()
 {
-    echo Building kernel...
+    write_header "Building kernel..."
     cd $DEV_ROOT/src/kernel
     $MKDIR $DEV_ROOT/output/kernel
     $MAKE O=$DEV_ROOT/output/kernel LOCALVERSION= -j$NCPU
@@ -52,7 +60,7 @@ build_kernel()
 
 clean_kernel()
 {
-    echo Cleaning kernel...
+    write_header "Cleaning kernel..."
     $RM $DEV_ROOT/output/kernel
     cd $DEV_ROOT/src/kernel
     # restore kernel/lib/libakaec.a and kernel/lib/libfha.a
@@ -64,7 +72,7 @@ clean_kernel()
 
 config_busybox()
 {
-    echo Configuring busybox...
+    write_header "Configuring busybox..."
     cd $DEV_ROOT/src/busybox
     $MKDIR $DEV_ROOT/output/busybox
     $MAKE O=$DEV_ROOT/output/busybox \
@@ -77,7 +85,7 @@ config_busybox()
 
 build_busybox()
 {
-    echo Building busybox...
+    write_header "Building busybox..."
     cd $DEV_ROOT/src/busybox
     $MAKE O=$DEV_ROOT/output/busybox \
         ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- -j$NCPU
@@ -87,7 +95,7 @@ build_busybox()
     $MAKE O=$DEV_ROOT/output/busybox \
         ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- CONFIG_PREFIX=rootfs -s install
 
-    echo Merging with the prebuilt...
+    write_header "Merging with the prebuilt..."
     cd $DEV_ROOT/output/busybox/rootfs
     $RM linuxrc
     sudo $TAR -zxpf $DEV_ROOT/build/rootfs_prebuilt.tgz
@@ -111,14 +119,14 @@ build_busybox()
 
 clean_busybox()
 {
-    echo Cleaning busybox...
+    write_header "Cleaning busybox..."
     sudo $RM $DEV_ROOT/output/busybox
     $RM $DEV_ROOT/src/librootfs/rootfs.tar.gz
 }
 
 build_rootfs()
 {
-    echo Building rootfs...
+    write_header "Building rootfs..."
     cd $DEV_ROOT/src/ipcamera
     $MAKE
     $MAKE install
@@ -131,7 +139,7 @@ build_rootfs()
 
 clean_rootfs()
 {
-    echo Cleaning rootfs...
+    write_header "Cleaning rootfs..."
     cd $DEV_ROOT/src/ipcamera
     $MAKE clean
     $RM $DEV_ROOT/src/ipcamera/rootfs/rootfs.tar.gz
@@ -139,7 +147,7 @@ clean_rootfs()
 
 build_samples()
 {
-    echo Building samples...
+    write_header "Building samples..."
 
     cd $DEV_ROOT/src/samples/gpio
     $MAKE
@@ -164,7 +172,7 @@ build_samples()
 
 clean_samples()
 {
-    echo Cleaning samples...
+    write_header "Cleaning samples..."
 
     cd $DEV_ROOT/src/samples/gpio
     $MAKE clean
@@ -181,7 +189,7 @@ clean_samples()
 
 build_node()
 {
-    echo Building node...
+    write_header "Building node..."
     cd $DEV_ROOT/src/node
 
     AR=arm-none-linux-gnueabi-ar \
@@ -204,7 +212,7 @@ build_node()
 
 clean_node()
 {
-    echo Cleaning node...
+    write_header "Cleaning node..."
     cd $DEV_ROOT/src/node
     $MAKE distclean
     $RM deps/v8/tools/jsmin.pyc
@@ -218,7 +226,7 @@ clean_node()
 
 build_updater()
 {
-    echo Building updater...
+    write_header "Building updater..."
     cd $DEV_ROOT/src/updater
     $MAKE
     $CP updater $DEV_ROOT/output/local/bin
@@ -226,14 +234,14 @@ build_updater()
 
 clean_updater()
 {
-    echo Cleaning updater...
+    write_header "Cleaning updater..."
     cd $DEV_ROOT/src/updater
     $MAKE clean
 }
 
 pack_basic()
 {
-    echo Packing Firmware...
+    write_header "Packing Firmware..."
     cd $DEV_ROOT/output
     $RM burntool
     $MKDIR burntool
@@ -247,7 +255,7 @@ pack_basic()
 
 pack_extra()
 {
-    echo Packing TFCard...
+    write_header "Packing TFCard..."
     cd $DEV_ROOT/output
     cat >local/readme.txt << EOF
 Readme: D1 Extra Program
