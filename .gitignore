@@ -1,2 +1,8 @@
 # Ignore generated files
 output/
+src/updater/
+src/librootfs/rootfs.tar.gz
+src/ipcamera/rootfs/dropbearlib/usr/bin/
+src/ipcamera/rootfs/dropbearlib/usr/sbin/
+src/ipcamera/rootfs/rsynclib/usr/bin/
+src/ipcamera/rootfs/opensshlib/usr/libexec/sftp-server

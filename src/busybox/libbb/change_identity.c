@@ -15,7 +15,7 @@
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY JULIE HAUGH AND CONTRIBUTORS ``AS IS'' AND
+ * THIS SOFTWARE IS PROVIDED BY JULIE HAUGH AND CONTRIBUTORS ''AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
  * ARE DISCLAIMED.  IN NO EVENT SHALL JULIE HAUGH OR CONTRIBUTORS BE LIABLE
@@ -27,15 +27,33 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-
 #include "libbb.h"
 
 /* Become the user and group(s) specified by PW.  */
 void FAST_FUNC change_identity(const struct passwd *pw)
 {
-	if (initgroups(pw->pw_name, pw->pw_gid) == -1)
-		bb_perror_msg_and_die("can't set groups");
+	int res;
+
+	res = initgroups(pw->pw_name, pw->pw_gid);
 	endgrent(); /* helps to close a fd used internally by libc */
+
+	if (res != 0) {
+		/*
+		 * If initgroups() fails because a system call is unimplemented
+		 * then we are running on a Linux kernel compiled without multiuser
+		 * support (CONFIG_MULTIUSER is not defined).
+		 *
+		 * If we are running without multiuser support *and* the target uid
+		 * already matches the current uid then we can skip the change of
+		 * identity.
+		 */
+		if (errno == ENOSYS && pw->pw_uid == getuid()) {
+			return;
+		}
+
+		bb_perror_msg_and_die("can't set groups");
+	}
+
 	xsetgid(pw->pw_gid);
 	xsetuid(pw->pw_uid);
 }

@@ -6,6 +6,19 @@
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
+//config:config LSPCI
+//config:	bool "lspci (6.3 kb)"
+//config:	default y
+//config:	#select PLATFORM_LINUX
+//config:	help
+//config:	lspci is a utility for displaying information about PCI buses in the
+//config:	system and devices connected to them.
+//config:
+//config:	This version uses sysfs (/sys/bus/pci/devices) only.
+
+//applet:IF_LSPCI(APPLET_NOEXEC(lspci, lspci, BB_DIR_USR_BIN, BB_SUID_DROP, lspci))
+
+//kbuild:lib-$(CONFIG_LSPCI) += lspci.o
 
 //usage:#define lspci_trivial_usage
 //usage:       "[-mk]"
@@ -74,11 +87,11 @@ static int FAST_FUNC fileAction(
 
 	if (option_mask32 & OPT_m) {
 		printf("%s \"Class %04x\" \"%04x\" \"%04x\" \"%04x\" \"%04x\"",
-		       pci_slot_name, pci_class, pci_vid, pci_did,
-		       pci_subsys_vid, pci_subsys_did);
+			pci_slot_name, pci_class, pci_vid, pci_did,
+			pci_subsys_vid, pci_subsys_did);
 	} else {
 		printf("%s Class %04x: %04x:%04x",
-		       pci_slot_name, pci_class, pci_vid, pci_did);
+			pci_slot_name, pci_class, pci_vid, pci_did);
 	}
 
 	if ((option_mask32 & OPT_k) && driver) {

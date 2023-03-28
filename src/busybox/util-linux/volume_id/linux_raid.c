@@ -17,6 +17,12 @@
  *	License along with this library; if not, write to the Free Software
  *	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
+//config:config FEATURE_VOLUMEID_LINUXRAID
+//config:	bool "linuxraid"
+//config:	default y
+//config:	depends on VOLUMEID
+
+//kbuild:lib-$(CONFIG_FEATURE_VOLUMEID_LINUXRAID) += linux_raid.o
 
 #include "volume_id_internal.h"
 
@@ -69,9 +75,9 @@ int FAST_FUNC volume_id_probe_linux_raid(struct volume_id *id /*,uint64_t off*/,
 	volume_id_set_uuid(id, uuid, UUID_DCE);
 
 //	snprintf(id->type_version, sizeof(id->type_version)-1, "%u.%u.%u",
-//		 le32_to_cpu(mdp->major_version),
-//		 le32_to_cpu(mdp->minor_version),
-//		 le32_to_cpu(mdp->patch_version));
+//		le32_to_cpu(mdp->major_version),
+//		le32_to_cpu(mdp->minor_version),
+//		le32_to_cpu(mdp->patch_version));
 
 	dbg("found raid signature");
 //	volume_id_set_usage(id, VOLUME_ID_RAID);

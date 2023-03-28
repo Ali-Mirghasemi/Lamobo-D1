@@ -6,13 +6,12 @@
  *
  * Licensed under GPLv2, see file LICENSE in this source tree.
  */
-
 //config:config LSOF
-//config:	bool "lsof"
+//config:	bool "lsof (3.4 kb)"
 //config:	default y
 //config:	help
-//config:	  Show open files in the format of:
-//config:	  PID <TAB> /path/to/executable <TAB> /path/to/opened/file
+//config:	Show open files in the format of:
+//config:	PID <TAB> /path/to/executable <TAB> /path/to/opened/file
 
 //applet:IF_LSOF(APPLET(lsof, BB_DIR_USR_BIN, BB_SUID_DROP))
 
@@ -61,9 +60,12 @@ int lsof_main(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
 		d_fd = opendir(name);
 		if (d_fd) {
 			while ((entry = readdir(d_fd)) != NULL) {
-				if (entry->d_type == DT_LNK) {
-					safe_strncpy(name + baseofs, entry->d_name, 10);
-					fdlink = xmalloc_readlink(name);
+				/* Skip entries '.' and '..' (and any hidden file) */
+				if (entry->d_name[0] == '.')
+					continue;
+
+				safe_strncpy(name + baseofs, entry->d_name, 10);
+				if ((fdlink = xmalloc_readlink(name)) != NULL) {
 					printf("%d\t%s\t%s\n", proc->pid, proc->exe, fdlink);
 					free(fdlink);
 				}

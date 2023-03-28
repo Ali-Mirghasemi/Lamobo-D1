@@ -6,20 +6,35 @@
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
+//config:config CHOWN
+//config:	bool "chown (7.6 kb)"
+//config:	default y
+//config:	help
+//config:	chown is used to change the user and/or group ownership
+//config:	of files.
+//config:
+//config:config FEATURE_CHOWN_LONG_OPTIONS
+//config:	bool "Enable long options"
+//config:	default y
+//config:	depends on CHOWN && LONG_OPTS
+
+//applet:IF_CHOWN(APPLET_NOEXEC(chown, chown, BB_DIR_BIN, BB_SUID_DROP, chown))
+
+//kbuild:lib-$(CONFIG_CHOWN) += chown.o
 
 /* BB_AUDIT SUSv3 defects - none? */
 /* http://www.opengroup.org/onlinepubs/007904975/utilities/chown.html */
 
 //usage:#define chown_trivial_usage
-//usage:       "[-RhLHP"IF_DESKTOP("cvf")"]... OWNER[<.|:>[GROUP]] FILE..."
+//usage:       "[-Rh"IF_DESKTOP("LHPcvf")"]... USER[:[GRP]] FILE..."
 //usage:#define chown_full_usage "\n\n"
-//usage:       "Change the owner and/or group of each FILE to OWNER and/or GROUP\n"
+//usage:       "Change the owner and/or group of each FILE to USER and/or GRP\n"
 //usage:     "\n	-R	Recurse"
 //usage:     "\n	-h	Affect symlinks instead of symlink targets"
+//usage:	IF_DESKTOP(
 //usage:     "\n	-L	Traverse all symlinks to directories"
 //usage:     "\n	-H	Traverse symlinks on command line only"
 //usage:     "\n	-P	Don't traverse symlinks (default)"
-//usage:	IF_DESKTOP(
 //usage:     "\n	-c	List changed files"
 //usage:     "\n	-v	List all files"
 //usage:     "\n	-f	Hide errors"
@@ -40,7 +55,7 @@
 /* This is a NOEXEC applet. Be very careful! */
 
 
-#define OPT_STR     ("Rh" IF_DESKTOP("vcfLHP"))
+#define OPT_STR     "Rh" IF_DESKTOP("vcfLHP")
 #define BIT_RECURSE 1
 #define OPT_RECURSE (opt & 1)
 #define OPT_NODEREF (opt & 2)
@@ -112,22 +127,18 @@ int chown_main(int argc UNUSED_PARAM, char **argv)
 	int opt, flags;
 	struct param_t param;
 
-	/* Just -1 might not work: uid_t may be unsigned long */
-	param.ugid.uid = -1L;
-	param.ugid.gid = -1L;
-
 #if ENABLE_FEATURE_CHOWN_LONG_OPTIONS
-	applet_long_options = chown_longopts;
+	opt = getopt32long(argv, "^" OPT_STR "\0" "-2", chown_longopts);
+#else
+	opt = getopt32(argv, "^" OPT_STR "\0" "-2");
 #endif
-	opt_complementary = "-2";
-	opt = getopt32(argv, OPT_STR);
 	argv += optind;
 
 	/* This matches coreutils behavior (almost - see below) */
 	param.chown_func = chown;
 	if (OPT_NODEREF
-	    /* || (OPT_RECURSE && !OPT_TRAVERSE_TOP): */
-	    IF_DESKTOP( || (opt & (BIT_RECURSE|BIT_TRAVERSE_TOP)) == BIT_RECURSE)
+	/* || (OPT_RECURSE && !OPT_TRAVERSE_TOP): */
+	IF_DESKTOP( || (opt & (BIT_RECURSE|BIT_TRAVERSE_TOP)) == BIT_RECURSE)
 	) {
 		param.chown_func = lchown;
 	}

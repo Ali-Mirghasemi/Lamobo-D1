@@ -18,8 +18,41 @@
  * <jam@ltsp.org>
  * Modified 2004/02/11 to add ability to pass the USER variable to remote host
  * by Fernando Silveira <swrh@gmx.net>
- *
  */
+//config:config TELNET
+//config:	bool "telnet (8.8 kb)"
+//config:	default y
+//config:	help
+//config:	Telnet is an interface to the TELNET protocol, but is also commonly
+//config:	used to test other simple protocols.
+//config:
+//config:config FEATURE_TELNET_TTYPE
+//config:	bool "Pass TERM type to remote host"
+//config:	default y
+//config:	depends on TELNET
+//config:	help
+//config:	Setting this option will forward the TERM environment variable to the
+//config:	remote host you are connecting to. This is useful to make sure that
+//config:	things like ANSI colors and other control sequences behave.
+//config:
+//config:config FEATURE_TELNET_AUTOLOGIN
+//config:	bool "Pass USER type to remote host"
+//config:	default y
+//config:	depends on TELNET
+//config:	help
+//config:	Setting this option will forward the USER environment variable to the
+//config:	remote host you are connecting to. This is useful when you need to
+//config:	log into a machine without telling the username (autologin). This
+//config:	option enables '-a' and '-l USER' options.
+//config:
+//config:config FEATURE_TELNET_WIDTH
+//config:	bool "Enable window size autodetection"
+//config:	default y
+//config:	depends on TELNET
+
+//applet:IF_TELNET(APPLET(telnet, BB_DIR_USR_BIN, BB_SUID_DROP))
+
+//kbuild:lib-$(CONFIG_TELNET) += telnet.o
 
 //usage:#if ENABLE_FEATURE_TELNET_AUTOLOGIN
 //usage:#define telnet_trivial_usage
@@ -39,6 +72,7 @@
 #include <arpa/telnet.h>
 #include <netinet/in.h>
 #include "libbb.h"
+#include "common_bufsiz.h"
 
 #ifdef __BIONIC__
 /* should be in arpa/telnet.h */
@@ -53,12 +87,6 @@
 # define TELOPT_SGA    3  /* suppress go ahead */
 # define TELOPT_TTYPE 24  /* terminal type */
 # define TELOPT_NAWS  31  /* window size */
-#endif
-
-#ifdef DOTRACE
-# define TRACE(x, y) do { if (x) printf y; } while (0)
-#else
-# define TRACE(x, y)
 #endif
 
 enum {
@@ -98,7 +126,7 @@ struct globals {
 #if ENABLE_FEATURE_TELNET_AUTOLOGIN
 	const char *autologin;
 #endif
-#if ENABLE_FEATURE_AUTOWIDTH
+#if ENABLE_FEATURE_TELNET_WIDTH
 	unsigned win_width, win_height;
 #endif
 	/* same buffer used both for network and console read/write */
@@ -108,11 +136,10 @@ struct globals {
 	struct termios termios_def;
 	struct termios termios_raw;
 } FIX_ALIASING;
-#define G (*(struct globals*)&bb_common_bufsiz1)
+#define G (*(struct globals*)bb_common_bufsiz1)
 #define INIT_G() do { \
-	struct G_sizecheck { \
-		char G_sizecheck[sizeof(G) > COMMON_BUFSIZE ? -1 : 1]; \
-	}; \
+	setup_common_bufsiz(); \
+	BUILD_BUG_ON(sizeof(G) > COMMON_BUFSIZE); \
 } while (0)
 
 
@@ -125,11 +152,9 @@ static void subneg(byte c);
 
 static void iac_flush(void)
 {
-	write(netfd, G.iacbuf, G.iaclen);
+	full_write(netfd, G.iacbuf, G.iaclen);
 	G.iaclen = 0;
 }
-
-#define write_str(fd, str) write(fd, str, sizeof(str) - 1)
 
 static void doexit(int ev) NORETURN;
 static void doexit(int ev)
@@ -145,7 +170,7 @@ static void con_escape(void)
 	if (bb_got_signal) /* came from line mode... go raw */
 		rawmode();
 
-	write_str(1, "\r\nConsole escape. Commands are:\r\n\n"
+	full_write1_str("\r\nConsole escape. Commands are:\r\n\n"
 			" l	go to line mode\r\n"
 			" c	go to character mode\r\n"
 			" z	suspend telnet\r\n"
@@ -176,7 +201,7 @@ static void con_escape(void)
 		doexit(EXIT_SUCCESS);
 	}
 
-	write_str(1, "continuing...\r\n");
+	full_write1_str("continuing...\r\n");
 
 	if (bb_got_signal)
 		cookmode();
@@ -186,40 +211,35 @@ static void con_escape(void)
 
 static void handle_net_output(int len)
 {
-	/* here we could do smart tricks how to handle 0xFF:s in output
-	 * stream like writing twice every sequence of FF:s (thus doing
-	 * many write()s. But I think interactive telnet application does
-	 * not need to be 100% 8-bit clean, so changing every 0xff:s to
-	 * 0x7f:s
-	 *
-	 * 2002-mar-21, Przemyslaw Czerpak (druzus@polbox.com)
-	 * I don't agree.
-	 * first - I cannot use programs like sz/rz
-	 * second - the 0x0D is sent as one character and if the next
-	 *	char is 0x0A then it's eaten by a server side.
-	 * third - why do you have to make 'many write()s'?
-	 *	I don't understand.
-	 * So I implemented it. It's really useful for me. I hope that
-	 * other people will find it interesting too.
-	 */
 	byte outbuf[2 * DATABUFSIZE];
-	byte *p = (byte*)G.buf;
-	int j = 0;
+	byte *dst = outbuf;
+	byte *src = (byte*)G.buf;
+	byte *end = src + len;
 
-	for (; len > 0; len--, p++) {
-		byte c = *p;
+	while (src < end) {
+		byte c = *src++;
 		if (c == 0x1d) {
 			con_escape();
 			return;
 		}
-		outbuf[j++] = c;
+		*dst = c;
 		if (c == IAC)
-			outbuf[j++] = c; /* IAC -> IAC IAC */
-		else if (c == '\r')
-			outbuf[j++] = '\0'; /* CR -> CR NUL */
+			*++dst = c; /* IAC -> IAC IAC */
+		else
+		if (c == '\r' || c == '\n') {
+			/* Enter key sends '\r' in raw mode and '\n' in cooked one.
+			 *
+			 * See RFC 1123 3.3.1 Telnet End-of-Line Convention.
+			 * Using CR LF instead of other allowed possibilities
+			 * like CR NUL - easier to talk to HTTP/SMTP servers.
+			 */
+			*dst = '\r'; /* Enter -> CR LF */
+			*++dst = '\n';
+		}
+		dst++;
 	}
-	if (j > 0)
-		full_write(netfd, outbuf, j);
+	if (dst - outbuf != 0)
+		full_write(netfd, outbuf, dst - outbuf);
 }
 
 static void handle_net_input(int len)
@@ -318,15 +338,16 @@ static void put_iac(int c)
 	G.iacbuf[G.iaclen++] = c;
 }
 
-static void put_iac2(byte wwdd, byte c)
+static void put_iac2_merged(unsigned wwdd_and_c)
 {
 	if (G.iaclen + 3 > IACBUFSIZE)
 		iac_flush();
 
 	put_iac(IAC);
-	put_iac(wwdd);
-	put_iac(c);
+	put_iac(wwdd_and_c >> 8);
+	put_iac(wwdd_and_c & 0xff);
 }
+#define put_iac2(wwdd,c) put_iac2_merged(((wwdd)<<8) + (c))
 
 #if ENABLE_FEATURE_TELNET_TTYPE
 static void put_iac_subopt(byte c, char *str)
@@ -378,7 +399,7 @@ static void put_iac_subopt_autologin(void)
 }
 #endif
 
-#if ENABLE_FEATURE_AUTOWIDTH
+#if ENABLE_FEATURE_TELNET_WIDTH
 static void put_iac_naws(byte c, int x, int y)
 {
 	if (G.iaclen + 9 > IACBUFSIZE)
@@ -388,30 +409,31 @@ static void put_iac_naws(byte c, int x, int y)
 	put_iac(SB);
 	put_iac(c);
 
-	put_iac((x >> 8) & 0xff);
-	put_iac(x & 0xff);
-	put_iac((y >> 8) & 0xff);
-	put_iac(y & 0xff);
+	/* "... & 0xff" implicitly done below */
+	put_iac(x >> 8);
+	put_iac(x);
+	put_iac(y >> 8);
+	put_iac(y);
 
 	put_iac(IAC);
 	put_iac(SE);
 }
 #endif
 
-static char const escapecharis[] ALIGN1 = "\r\nEscape character is ";
-
 static void setConMode(void)
 {
 	if (G.telflags & UF_ECHO) {
 		if (G.charmode == CHM_TRY) {
 			G.charmode = CHM_ON;
-			printf("\r\nEntering character mode%s'^]'.\r\n", escapecharis);
+			printf("\r\nEntering %s mode"
+				"\r\nEscape character is '^%c'.\r\n", "character", ']');
 			rawmode();
 		}
 	} else {
 		if (G.charmode != CHM_OFF) {
 			G.charmode = CHM_OFF;
-			printf("\r\nEntering line mode%s'^C'.\r\n", escapecharis);
+			printf("\r\nEntering %s mode"
+				"\r\nEscape character is '^%c'.\r\n", "line", 'C');
 			cookmode();
 		}
 	}
@@ -514,7 +536,7 @@ static void to_new_environ(void)
 }
 #endif
 
-#if ENABLE_FEATURE_AUTOWIDTH
+#if ENABLE_FEATURE_TELNET_WIDTH
 static void to_naws(void)
 {
 	/* Tell server we will do NAWS */
@@ -537,7 +559,7 @@ static void telopt(byte c)
 	case TELOPT_NEW_ENVIRON:
 		to_new_environ(); break;
 #endif
-#if ENABLE_FEATURE_AUTOWIDTH
+#if ENABLE_FEATURE_TELNET_WIDTH
 	case TELOPT_NAWS:
 		to_naws();
 		put_iac_naws(c, G.win_width, G.win_height);
@@ -599,10 +621,6 @@ int telnet_main(int argc UNUSED_PARAM, char **argv)
 
 	INIT_G();
 
-#if ENABLE_FEATURE_AUTOWIDTH
-	get_terminal_width_height(0, &G.win_width, &G.win_height);
-#endif
-
 #if ENABLE_FEATURE_TELNET_TTYPE
 	G.ttype = getenv("TERM");
 #endif
@@ -614,8 +632,10 @@ int telnet_main(int argc UNUSED_PARAM, char **argv)
 	}
 
 #if ENABLE_FEATURE_TELNET_AUTOLOGIN
-	if (1 & getopt32(argv, "al:", &G.autologin))
+	if (1 == getopt32(argv, "al:", &G.autologin)) {
+		/* Only -a without -l USER picks $USER from envvar */
 		G.autologin = getenv("USER");
+	}
 	argv += optind;
 #else
 	argv++;
@@ -623,13 +643,19 @@ int telnet_main(int argc UNUSED_PARAM, char **argv)
 	if (!*argv)
 		bb_show_usage();
 	host = *argv++;
-	port = bb_lookup_port(*argv ? *argv++ : "telnet", "tcp", 23);
+	port = *argv ? bb_lookup_port(*argv++, "tcp", 23)
+		: bb_lookup_std_port("telnet", "tcp", 23);
 	if (*argv) /* extra params?? */
 		bb_show_usage();
 
 	xmove_fd(create_and_connect_stream_or_die(host, port), netfd);
 
-	setsockopt(netfd, SOL_SOCKET, SO_KEEPALIVE, &const_int_1, sizeof(const_int_1));
+	setsockopt_keepalive(netfd);
+
+#if ENABLE_FEATURE_TELNET_WIDTH
+	get_terminal_width_height(0, &G.win_width, &G.win_height);
+//TODO: support dynamic resize?
+#endif
 
 	signal(SIGINT, record_signo);
 
@@ -654,7 +680,6 @@ int telnet_main(int argc UNUSED_PARAM, char **argv)
 			len = safe_read(STDIN_FILENO, G.buf, DATABUFSIZE);
 			if (len <= 0)
 				doexit(EXIT_SUCCESS);
-			TRACE(0, ("Read con: %d\n", len));
 			handle_net_output(len);
 		}
 
@@ -664,7 +689,6 @@ int telnet_main(int argc UNUSED_PARAM, char **argv)
 				full_write1_str("Connection closed by foreign host\r\n");
 				doexit(EXIT_FAILURE);
 			}
-			TRACE(0, ("Read netfd (%d): %d\n", netfd, len));
 			handle_net_input(len);
 		}
 	} /* while (1) */
