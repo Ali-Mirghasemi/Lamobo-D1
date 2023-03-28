@@ -11,7 +11,6 @@
  *
  * Rani Assaf <rani@magic.metawire.com> 980929: resolve addresses
  */
-
 #include "ip_common.h"  /* #include "libbb.h" is inside */
 #include "utils.h"
 
@@ -67,7 +66,7 @@ char** FAST_FUNC ip_parse_common_args(char **argv)
 				bb_show_usage();
 			arg = index_in_strings(families, *argv);
 			if (arg < 0)
-				invarg(*argv, "protocol family");
+				invarg_1_to_2(*argv, "family");
 			/* now arg == 0, 1 or 2 */
 		} else {
 			arg -= ARG_IPv4;

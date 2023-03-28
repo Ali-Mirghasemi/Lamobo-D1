@@ -17,9 +17,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
- *
  */
-
 #include "libbb.h"
 #include "coreutils.h"
 
@@ -33,7 +31,9 @@ mode_t FAST_FUNC getopt_mk_fifo_nod(char **argv)
 	int opt;
 	opt = getopt32(argv, "m:" IF_SELINUX("Z:"), &smode IF_SELINUX(,&scontext));
 	if (opt & 1) {
-		if (bb_parse_mode(smode, &mode))
+		mode = bb_parse_mode(smode, mode);
+		if (mode != (mode_t)-1) /* if mode is valid */
+			/* make future mknod/mkfifo set mode bits exactly */
 			umask(0);
 	}
 

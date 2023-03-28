@@ -1,25 +1,34 @@
 /* vi: set sw=4 ts=4: */
-/* stty -- change and print terminal line settings
-   Copyright (C) 1990-1999 Free Software Foundation, Inc.
-
-   Licensed under GPLv2 or later, see file LICENSE in this source tree.
-*/
+/*
+ * stty -- change and print terminal line settings
+ * Copyright (C) 1990-1999 Free Software Foundation, Inc.
+ *
+ * Licensed under GPLv2 or later, see file LICENSE in this source tree.
+ */
 /* Usage: stty [-ag] [-F device] [setting...]
+ *
+ * Options:
+ * -a Write all current settings to stdout in human-readable form.
+ * -g Write all current settings to stdout in stty-readable form.
+ * -F Open and use the specified device instead of stdin
+ *
+ * If no args are given, write to stdout the baud rate and settings that
+ * have been changed from their defaults.  Mode reading and changes
+ * are done on the specified device, or stdin if none was specified.
+ *
+ * David MacKenzie <djm@gnu.ai.mit.edu>
+ *
+ * Special for busybox ported by Vladimir Oleynik <dzo@simtreas.ru> 2001
+ */
+//config:config STTY
+//config:	bool "stty (8.9 kb)"
+//config:	default y
+//config:	help
+//config:	stty is used to change and print terminal line settings.
 
-   Options:
-   -a Write all current settings to stdout in human-readable form.
-   -g Write all current settings to stdout in stty-readable form.
-   -F Open and use the specified device instead of stdin
+//applet:IF_STTY(APPLET_NOEXEC(stty, stty, BB_DIR_BIN, BB_SUID_DROP, stty))
 
-   If no args are given, write to stdout the baud rate and settings that
-   have been changed from their defaults.  Mode reading and changes
-   are done on the specified device, or stdin if none was specified.
-
-   David MacKenzie <djm@gnu.ai.mit.edu>
-
-   Special for busybox ported by Vladimir Oleynik <dzo@simtreas.ru> 2001
-
-   */
+//kbuild:lib-$(CONFIG_STTY) += stty.o
 
 //usage:#define stty_trivial_usage
 //usage:       "[-a|g] [-F DEVICE] [SETTING]..."
@@ -32,6 +41,7 @@
 //usage:     "\n	[SETTING]	See manpage"
 
 #include "libbb.h"
+#include "common_bufsiz.h"
 
 #ifndef _POSIX_VDISABLE
 # define _POSIX_VDISABLE ((unsigned char) 0)
@@ -138,6 +148,9 @@
 #endif
 #ifndef CRDLY
 # define CRDLY 0
+#endif
+#ifndef CMSPAR
+# define CMSPAR 0
 #endif
 #ifndef CRTSCTS
 # define CRTSCTS 0
@@ -246,10 +259,21 @@ enum speed_setting {
 
 /* Which member(s) of 'struct termios' a mode uses */
 enum {
-	/* Do NOT change the order or values, as mode_type_flag()
-	 * depends on them */
 	control, input, output, local, combination
 };
+static tcflag_t *get_ptr_to_tcflag(unsigned type, const struct termios *mode)
+{
+	static const uint8_t tcflag_offsets[] ALIGN1 = {
+		offsetof(struct termios, c_cflag), /* control */
+		offsetof(struct termios, c_iflag), /* input */
+		offsetof(struct termios, c_oflag), /* output */
+		offsetof(struct termios, c_lflag)  /* local */
+	};
+	if (type <= local) {
+		return (tcflag_t*) (((char*)mode) + tcflag_offsets[type]);
+	}
+	return NULL;
+}
 
 /* Flags for 'struct mode_info' */
 #define SANE_SET 1              /* Set in 'sane' mode                  */
@@ -306,7 +330,7 @@ enum {
 #define MI_ENTRY(N,T,F,B,M) N "\0"
 
 /* Mode names given on command line */
-static const char mode_name[] =
+static const char mode_name[] ALIGN1 =
 	MI_ENTRY("evenp",    combination, REV        | OMIT, 0,          0 )
 	MI_ENTRY("parity",   combination, REV        | OMIT, 0,          0 )
 	MI_ENTRY("oddp",     combination, REV        | OMIT, 0,          0 )
@@ -332,6 +356,9 @@ static const char mode_name[] =
 #endif
 	MI_ENTRY("parenb",   control,     REV,               PARENB,     0 )
 	MI_ENTRY("parodd",   control,     REV,               PARODD,     0 )
+#if CMSPAR
+	MI_ENTRY("cmspar",   control,     REV,               CMSPAR,     0 )
+#endif
 	MI_ENTRY("cs5",      control,     0,                 CS5,     CSIZE)
 	MI_ENTRY("cs6",      control,     0,                 CS6,     CSIZE)
 	MI_ENTRY("cs7",      control,     0,                 CS7,     CSIZE)
@@ -456,6 +483,10 @@ static const char mode_name[] =
 #if ECHOKE
 	MI_ENTRY("echoke",   local,       SANE_SET   | REV,  ECHOKE,     0 )
 	MI_ENTRY("crtkill",  local,       OMIT       | REV,  ECHOKE,     0 )
+#endif
+	MI_ENTRY("flusho",   local,       SANE_UNSET | REV,  FLUSHO,     0 )
+#ifdef EXTPROC
+	MI_ENTRY("extproc",  local,       SANE_UNSET | REV,  EXTPROC,    0 )
 #endif
 	;
 
@@ -489,6 +520,9 @@ static const struct mode_info mode_info[] = {
 #endif
 	MI_ENTRY("parenb",   control,     REV,               PARENB,     0 )
 	MI_ENTRY("parodd",   control,     REV,               PARODD,     0 )
+#if CMSPAR
+	MI_ENTRY("cmspar",   control,     REV,               CMSPAR,     0 )
+#endif
 	MI_ENTRY("cs5",      control,     0,                 CS5,     CSIZE)
 	MI_ENTRY("cs6",      control,     0,                 CS6,     CSIZE)
 	MI_ENTRY("cs7",      control,     0,                 CS7,     CSIZE)
@@ -613,6 +647,10 @@ static const struct mode_info mode_info[] = {
 #if ECHOKE
 	MI_ENTRY("echoke",   local,       SANE_SET   | REV,  ECHOKE,     0 )
 	MI_ENTRY("crtkill",  local,       OMIT       | REV,  ECHOKE,     0 )
+#endif
+	MI_ENTRY("flusho",   local,       SANE_UNSET | REV,  FLUSHO,     0 )
+#ifdef EXTPROC
+	MI_ENTRY("extproc",  local,       SANE_UNSET | REV,  EXTPROC,    0 )
 #endif
 };
 
@@ -669,7 +707,7 @@ enum {
 #define CI_ENTRY(n,s,o) n "\0"
 
 /* Name given on command line */
-static const char control_name[] =
+static const char control_name[] ALIGN1 =
 	CI_ENTRY("intr",     CINTR,   VINTR   )
 	CI_ENTRY("quit",     CQUIT,   VQUIT   )
 	CI_ENTRY("erase",    CERASE,  VERASE  )
@@ -711,7 +749,7 @@ static const char control_name[] =
 #undef CI_ENTRY
 #define CI_ENTRY(n,s,o) { s, o },
 
-static const struct control_info control_info[] = {
+static const struct control_info control_info[] ALIGN2 = {
 	/* This should be verbatim cut-n-paste copy of the above CI_ENTRYs */
 	CI_ENTRY("intr",     CINTR,   VINTR   )
 	CI_ENTRY("quit",     CQUIT,   VQUIT   )
@@ -762,58 +800,14 @@ struct globals {
 	unsigned max_col;
 	/* Current position, to know when to wrap */
 	unsigned current_col;
-	char buf[10];
 } FIX_ALIASING;
-#define G (*(struct globals*)&bb_common_bufsiz1)
+#define G (*(struct globals*)bb_common_bufsiz1)
 #define INIT_G() do { \
+	setup_common_bufsiz(); \
 	G.device_name = bb_msg_standard_input; \
 	G.max_col = 80; \
+	G.current_col = 0; /* we are noexec, must clear */ \
 } while (0)
-
-
-/* Return a string that is the printable representation of character CH */
-/* Adapted from 'cat' by Torbjorn Granlund */
-static const char *visible(unsigned ch)
-{
-	char *bpout = G.buf;
-
-	if (ch == _POSIX_VDISABLE)
-		return "<undef>";
-
-	if (ch >= 128) {
-		ch -= 128;
-		*bpout++ = 'M';
-		*bpout++ = '-';
-	}
-
-	if (ch < 32) {
-		*bpout++ = '^';
-		*bpout++ = ch + 64;
-	} else if (ch < 127) {
-		*bpout++ = ch;
-	} else {
-		*bpout++ = '^';
-		*bpout++ = '?';
-	}
-
-	*bpout = '\0';
-	return G.buf;
-}
-
-static tcflag_t *mode_type_flag(unsigned type, const struct termios *mode)
-{
-	static const uint8_t tcflag_offsets[] ALIGN1 = {
-		offsetof(struct termios, c_cflag), /* control */
-		offsetof(struct termios, c_iflag), /* input */
-		offsetof(struct termios, c_oflag), /* output */
-		offsetof(struct termios, c_lflag)  /* local */
-	};
-
-	if (type <= local) {
-		return (tcflag_t*) (((char*)mode) + tcflag_offsets[type]);
-	}
-	return NULL;
-}
 
 static void set_speed_or_die(enum speed_setting type, const char *arg,
 					struct termios *mode)
@@ -860,10 +854,11 @@ static void wrapf(const char *message, ...)
 		G.current_col++;
 		if (buf[0] != '\n') {
 			if (G.current_col + buflen >= G.max_col) {
-				bb_putchar('\n');
 				G.current_col = 0;
-			} else
+				bb_putchar('\n');
+			} else {
 				bb_putchar(' ');
+			}
 		}
 	}
 	fputs(buf, stdout);
@@ -1042,6 +1037,9 @@ static void do_display(const struct termios *mode, int all)
 #endif
 
 	for (i = 0; i != CIDX_min; ++i) {
+		char ch;
+		char buf10[10];
+
 		/* If swtch is the same as susp, don't print both */
 #if VSWTCH == VSUSP
 		if (i == CIDX_swtch)
@@ -1055,8 +1053,12 @@ static void do_display(const struct termios *mode, int all)
 			continue;
 		}
 #endif
-		wrapf("%s = %s;", nth_string(control_name, i),
-			  visible(mode->c_cc[control_info[i].offset]));
+		ch = mode->c_cc[control_info[i].offset];
+		if (ch == _POSIX_VDISABLE)
+			strcpy(buf10, "<undef>");
+		else
+			visible(ch, buf10, 0);
+		wrapf("%s = %s;", nth_string(control_name, i), buf10);
 	}
 #if VEOF == VMIN
 	if ((mode->c_lflag & ICANON) == 0)
@@ -1072,7 +1074,7 @@ static void do_display(const struct termios *mode, int all)
 			prev_type = mode_info[i].type;
 		}
 
-		bitsp = mode_type_flag(mode_info[i].type, mode);
+		bitsp = get_ptr_to_tcflag(mode_info[i].type, mode);
 		mask = mode_info[i].mask ? mode_info[i].mask : mode_info[i].bits;
 		if ((*bitsp & mask) == mode_info[i].bits) {
 			if (all || (mode_info[i].flags & SANE_UNSET))
@@ -1091,7 +1093,6 @@ static void do_display(const struct termios *mode, int all)
 static void sane_mode(struct termios *mode)
 {
 	int i;
-	tcflag_t *bitsp;
 
 	for (i = 0; i < NUM_control_info; ++i) {
 #if VMIN == VEOF
@@ -1102,14 +1103,17 @@ static void sane_mode(struct termios *mode)
 	}
 
 	for (i = 0; i < NUM_mode_info; ++i) {
+		tcflag_t val;
+		tcflag_t *bitsp = get_ptr_to_tcflag(mode_info[i].type, mode);
+
+		if (!bitsp)
+			continue;
+		val = *bitsp & ~((unsigned long)mode_info[i].mask);
 		if (mode_info[i].flags & SANE_SET) {
-			bitsp = mode_type_flag(mode_info[i].type, mode);
-			*bitsp = (*bitsp & ~((unsigned long)mode_info[i].mask))
-				| mode_info[i].bits;
-		} else if (mode_info[i].flags & SANE_UNSET) {
-			bitsp = mode_type_flag(mode_info[i].type, mode);
-			*bitsp = *bitsp & ~((unsigned long)mode_info[i].mask)
-				& ~mode_info[i].bits;
+			*bitsp = val | mode_info[i].bits;
+		} else
+		if (mode_info[i].flags & SANE_UNSET) {
+			*bitsp = val & ~mode_info[i].bits;
 		}
 	}
 }
@@ -1119,17 +1123,18 @@ static void set_mode(const struct mode_info *info, int reversed,
 {
 	tcflag_t *bitsp;
 
-	bitsp = mode_type_flag(info->type, mode);
+	bitsp = get_ptr_to_tcflag(info->type, mode);
 
 	if (bitsp) {
+		tcflag_t val = *bitsp & ~info->mask;
 		if (reversed)
-			*bitsp = *bitsp & ~info->mask & ~info->bits;
+			*bitsp = val & ~info->bits;
 		else
-			*bitsp = (*bitsp & ~info->mask) | info->bits;
+			*bitsp = val | info->bits;
 		return;
 	}
 
-	/* Combination mode */
+	/* !bitsp - it's a "combination" mode */
 	if (info == &mode_info[IDX_evenp] || info == &mode_info[IDX_parity]) {
 		if (reversed)
 			mode->c_cflag = (mode->c_cflag & ~PARENB & ~CSIZE) | CS8;
@@ -1429,7 +1434,7 @@ int stty_main(int argc UNUSED_PARAM, char **argv)
 		perror_on_device_and_die("%s");
 
 	if (stty_state & (STTY_verbose_output | STTY_recoverable_output | STTY_noargs)) {
-		get_terminal_width_height(STDOUT_FILENO, &G.max_col, NULL);
+		G.max_col = get_terminal_width(STDOUT_FILENO);
 		output_func(&mode, display_all);
 		return EXIT_SUCCESS;
 	}
@@ -1534,7 +1539,12 @@ int stty_main(int argc UNUSED_PARAM, char **argv)
 			perror_on_device_and_die("%s");
 
 		if (memcmp(&mode, &new_mode, sizeof(mode)) != 0) {
-#if CIBAUD
+/*
+ * I think the below chunk is not necessary on Linux.
+ * If you are deleting it, also delete STTY_speed_was_set bit -
+ * it is only ever checked here.
+ */
+#if 0 /* was "if CIBAUD" */
 			/* SunOS 4.1.3 (at least) has the problem that after this sequence,
 			   tcgetattr (&m1); tcsetattr (&m1); tcgetattr (&m2);
 			   sometimes (m1 != m2).  The only difference is in the four bits

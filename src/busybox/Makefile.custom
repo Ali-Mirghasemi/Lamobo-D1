@@ -3,9 +3,17 @@
 # ==========================================================================
 
 busybox.links: $(srctree)/applets/busybox.mkll $(objtree)/include/autoconf.h include/applets.h
-	$(Q)-$(SHELL) $^ >$@
+	$(Q)-$(SHELL) $^ > $@
+
+busybox.cfg.suid: $(srctree)/applets/busybox.mksuid $(objtree)/include/autoconf.h include/applets.h
+	$(Q)-SUID="yes" $(SHELL) $^ > $@
+busybox.cfg.nosuid: $(srctree)/applets/busybox.mksuid $(objtree)/include/autoconf.h include/applets.h
+	$(Q)-SUID="DROP" $(SHELL) $^ > $@
 
 .PHONY: install
+ifeq ($(CONFIG_INSTALL_APPLET_DONT),y)
+INSTALL_OPTS:= --none
+endif
 ifeq ($(CONFIG_INSTALL_APPLET_SYMLINKS),y)
 INSTALL_OPTS:= --symlinks
 endif
@@ -23,6 +31,10 @@ ifeq ($(CONFIG_INSTALL_SH_APPLET_SCRIPT_WRAPPER),y)
 INSTALL_OPTS:= --scriptwrapper
 endif
 endif
+ifeq ($(CONFIG_FEATURE_INDIVIDUAL),y)
+INSTALL_OPTS:= --binaries
+LIBBUSYBOX_SONAME:= 0_lib/libbusybox.so.$(BB_VER)
+endif
 install: $(srctree)/applets/install.sh busybox busybox.links
 	$(Q)DO_INSTALL_LIBS="$(strip $(LIBBUSYBOX_SONAME) $(DO_INSTALL_LIBS))" \
 		$(SHELL) $< $(CONFIG_PREFIX) $(INSTALL_OPTS)
@@ -39,6 +51,9 @@ ifeq ($(strip $(CONFIG_FEATURE_SUID)),y)
 	@echo
 endif
 
+install-noclobber: INSTALL_OPTS+=--noclobber
+install-noclobber: install
+
 uninstall: busybox.links
 	rm -f $(CONFIG_PREFIX)/bin/busybox
 	rm -f $(CONFIG_PREFIX)/etc/udhcpd.conf
@@ -53,7 +68,11 @@ endif
 # (cp -pPR is POSIX-compliant (cp -dpR or cp -a would not be))
 .PHONY: check
 .PHONY: test
+ifeq ($(CONFIG_UNIT_TEST),y)
+UNIT_CMD = ./busybox unit
+endif
 check test: busybox busybox.links
+	$(UNIT_CMD)
 	test -d $(objtree)/testsuite || cp -pPR $(srctree)/testsuite $(objtree)
 	bindir=$(objtree) srcdir=$(srctree)/testsuite \
 	$(SHELL) -c "cd $(objtree)/testsuite && $(srctree)/testsuite/runtest $(if $(KBUILD_VERBOSE:0=),-v)"
@@ -71,6 +90,10 @@ release: distclean
 		-name .git \
 		-print \
 		-exec rm -r -f {} \; ; \
+	find busybox-$(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION)/ -type f \
+		-name .gitignore \
+		-print \
+		-exec rm -f {} \; ; \
 	find busybox-$(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION)/ -type f \
 		-name .\#* \
 		-print \

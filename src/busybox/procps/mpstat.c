@@ -6,16 +6,16 @@
  *
  * Licensed under GPLv2, see file LICENSE in this source tree.
  */
-
-//applet:IF_MPSTAT(APPLET(mpstat, BB_DIR_BIN, BB_SUID_DROP))
-
-//kbuild:lib-$(CONFIG_MPSTAT) += mpstat.o
-
 //config:config MPSTAT
-//config:	bool "mpstat"
+//config:	bool "mpstat (9.8 kb)"
 //config:	default y
 //config:	help
-//config:	  Per-processor statistics
+//config:	Per-processor statistics
+
+//applet:IF_MPSTAT(APPLET(mpstat, BB_DIR_BIN, BB_SUID_DROP))
+/* shouldn't be noexec: "mpstat INTERVAL" runs indefinitely */
+
+//kbuild:lib-$(CONFIG_MPSTAT) += mpstat.o
 
 #include "libbb.h"
 #include <sys/utsname.h>  /* struct utsname */
@@ -522,13 +522,11 @@ static void get_irqs_from_stat(struct stats_irq *irq)
 	FILE *fp;
 	char buf[1024];
 
-	fp = fopen_for_read(PROCFS_STAT);
-	if (!fp)
-		return;
+	fp = xfopen_for_read(PROCFS_STAT);
 
 	while (fgets(buf, sizeof(buf), fp)) {
 		//bb_error_msg("/proc/stat:'%s'", buf);
-		if (strncmp(buf, "intr ", 5) == 0) {
+		if (is_prefixed_with(buf, "intr ")) {
 			/* Read total number of IRQs since system boot */
 			sscanf(buf + 5, "%"FMT_DATA"u", &irq->irq_nr);
 		}
@@ -644,9 +642,7 @@ static void get_uptime(data_t *uptime)
 	char buf[sizeof(long)*3 * 2 + 4]; /* enough for long.long */
 	unsigned long uptime_sec, decimal;
 
-	fp = fopen_for_read(PROCFS_UPTIME);
-	if (!fp)
-		return;
+	fp = xfopen_for_read(PROCFS_UPTIME);
 	if (fgets(buf, sizeof(buf), fp)) {
 		if (sscanf(buf, "%lu.%lu", &uptime_sec, &decimal) == 2) {
 			*uptime = (data_t)uptime_sec * G.hz + decimal * G.hz / 100;
@@ -775,12 +771,6 @@ static void main_loop(void)
 
 /* Initialization */
 
-/* Get number of clock ticks per sec */
-static ALWAYS_INLINE unsigned get_hz(void)
-{
-	return sysconf(_SC_CLK_TCK);
-}
-
 static void alloc_struct(int cpus)
 {
 	int i;
@@ -850,7 +840,7 @@ static int get_irqcpu_nr(const char *f, int max_irqs)
 //usage:     "\n	-u			Report CPU utilization"
 
 int mpstat_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
-int mpstat_main(int UNUSED_PARAM argc, char **argv)
+int mpstat_main(int argc UNUSED_PARAM, char **argv)
 {
 	char *opt_irq_fmt;
 	char *opt_set_cpu;
@@ -873,7 +863,7 @@ int mpstat_main(int UNUSED_PARAM argc, char **argv)
 	G.cpu_nr = get_cpu_count();
 
 	/* Get number of clock ticks per sec */
-	G.hz = get_hz();
+	G.hz = bb_clk_tck();
 
 	/* Calculate number of interrupts per processor */
 	G.irqcpu_nr = get_irqcpu_nr(PROCFS_INTERRUPTS, NR_IRQS) + NR_IRQCPU_PREALLOC;

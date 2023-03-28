@@ -5,7 +5,6 @@
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
-
 #include "libbb.h"
 
 #define DEBUG 0
@@ -16,7 +15,7 @@ int FAST_FUNC xgetpty(char *line)
 
 #if ENABLE_FEATURE_DEVPTS
 	p = open("/dev/ptmx", O_RDWR);
-	if (p > 0) {
+	if (p >= 0) {
 		grantpt(p); /* chmod+chown corresponding slave pty */
 		unlockpt(p); /* (what does this do?) */
 # ifndef HAVE_PTSNAME_R

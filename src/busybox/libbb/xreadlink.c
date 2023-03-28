@@ -1,12 +1,17 @@
 /* vi: set sw=4 ts=4: */
 /*
  * xreadlink.c - safe implementation of readlink.
- * Returns a NULL on failure...
+ * Returns a NULL on failure.
  *
  * Licensed under GPLv2, see file LICENSE in this source tree.
  */
-
 #include "libbb.h"
+
+/* Some systems (eg Hurd) do not have MAXSYMLINKS definition,
+ * set it to some reasonable value if it isn't defined */
+#ifndef MAXSYMLINKS
+# define MAXSYMLINKS 20
+#endif
 
 /*
  * NOTE: This function returns a malloced char* that you will have to free
@@ -102,7 +107,11 @@ char* FAST_FUNC xmalloc_readlink_or_warn(const char *path)
 
 char* FAST_FUNC xmalloc_realpath(const char *path)
 {
-#if defined(__GLIBC__) && !defined(__UCLIBC__)
+/* NB: uclibc also defines __GLIBC__
+ * Therefore the test "if glibc, or uclibc >= 0.9.31" looks a bit weird:
+ */
+#if defined(__GLIBC__) && \
+    (!defined(__UCLIBC__) || UCLIBC_VERSION >= KERNEL_VERSION(0, 9, 31))
 	/* glibc provides a non-standard extension */
 	/* new: POSIX.1-2008 specifies this behavior as well */
 	return realpath(path, NULL);
@@ -112,4 +121,34 @@ char* FAST_FUNC xmalloc_realpath(const char *path)
 	/* on error returns NULL (xstrdup(NULL) == NULL) */
 	return xstrdup(realpath(path, buf));
 #endif
+}
+
+char* FAST_FUNC xmalloc_realpath_coreutils(const char *path)
+{
+	char *buf;
+
+	errno = 0;
+	buf = xmalloc_realpath(path);
+	/*
+	 * There is one case when "readlink -f" and
+	 * "realpath" from coreutils succeed,
+	 * even though file does not exist, such as:
+	 *     /tmp/file_does_not_exist
+	 * (the directory must exist).
+	 */
+	if (!buf && errno == ENOENT) {
+		char *last_slash = strrchr(path, '/');
+		if (last_slash) {
+			*last_slash++ = '\0';
+			buf = xmalloc_realpath(path);
+			if (buf) {
+				unsigned len = strlen(buf);
+				buf = xrealloc(buf, len + strlen(last_slash) + 2);
+				buf[len++] = '/';
+				strcpy(buf + len, last_slash);
+			}
+		}
+	}
+
+	return buf;
 }

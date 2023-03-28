@@ -2,7 +2,7 @@
 /*
  * Mini tr implementation for busybox
  *
- ** Copyright (c) 1987,1997, Prentice Hall   All rights reserved.
+ * Copyright (c) 1987,1997, Prentice Hall   All rights reserved.
  *
  * The name of Prentice Hall may not be used to endorse or promote
  * products derived from this software without specific prior
@@ -18,34 +18,35 @@
 /* http://www.opengroup.org/onlinepubs/009695399/utilities/tr.html
  * TODO: graph, print
  */
-
-//kbuild:lib-$(CONFIG_TR) += tr.o
-
 //config:config TR
-//config:	bool "tr"
+//config:	bool "tr (5.1 kb)"
 //config:	default y
 //config:	help
-//config:	  tr is used to squeeze, and/or delete characters from standard
-//config:	  input, writing to standard output.
+//config:	tr is used to squeeze, and/or delete characters from standard
+//config:	input, writing to standard output.
 //config:
 //config:config FEATURE_TR_CLASSES
 //config:	bool "Enable character classes (such as [:upper:])"
 //config:	default y
 //config:	depends on TR
 //config:	help
-//config:	  Enable character classes, enabling commands such as:
-//config:	  tr [:upper:] [:lower:] to convert input into lowercase.
+//config:	Enable character classes, enabling commands such as:
+//config:	tr [:upper:] [:lower:] to convert input into lowercase.
 //config:
 //config:config FEATURE_TR_EQUIV
 //config:	bool "Enable equivalence classes"
 //config:	default y
 //config:	depends on TR
 //config:	help
-//config:	  Enable equivalence classes, which essentially add the enclosed
-//config:	  character to the current set. For instance, tr [=a=] xyz would
-//config:	  replace all instances of 'a' with 'xyz'. This option is mainly
-//config:	  useful for cases when no other way of expressing a character
-//config:	  is possible.
+//config:	Enable equivalence classes, which essentially add the enclosed
+//config:	character to the current set. For instance, tr [=a=] xyz would
+//config:	replace all instances of 'a' with 'xyz'. This option is mainly
+//config:	useful for cases when no other way of expressing a character
+//config:	is possible.
+
+//applet:IF_TR(APPLET(tr, BB_DIR_USR_BIN, BB_SUID_DROP))
+
+//kbuild:lib-$(CONFIG_TR) += tr.o
 
 //usage:#define tr_trivial_usage
 //usage:       "[-cds] STRING1 [STRING2]"
@@ -91,7 +92,6 @@ static void map(char *pvector,
  *   Character classes, e.g. [:upper:] ==> A...Z
  *   Equiv classess, e.g. [=A=] ==> A   (hmmmmmmm?)
  * not supported:
- *   \ooo-\ooo - octal ranges
  *   [x*N] - repeat char x N times
  *   [x*] - repeat char x until it fills STRING2:
  * # echo qwe123 | /usr/bin/tr 123456789 '[d]'
@@ -99,7 +99,7 @@ static void map(char *pvector,
  * # echo qwe123 | /usr/bin/tr 123456789 '[d*]'
  * qweddd
  */
-static unsigned expand(const char *arg, char **buffer_p)
+static unsigned expand(char *arg, char **buffer_p)
 {
 	char *buffer = *buffer_p;
 	unsigned pos = 0;
@@ -113,9 +113,17 @@ static unsigned expand(const char *arg, char **buffer_p)
 			*buffer_p = buffer = xrealloc(buffer, size);
 		}
 		if (*arg == '\\') {
+			const char *z;
 			arg++;
-			buffer[pos++] = bb_process_escape_sequence(&arg);
-			continue;
+			z = arg;
+			ac = bb_process_escape_sequence(&z);
+			arg = (char *)z;
+			arg--;
+			*arg = ac;
+			/*
+			 * fall through, there may be a range.
+			 * If not, current char will be treated anyway.
+			 */
 		}
 		if (arg[1] == '-') { /* "0-9..." */
 			ac = arg[2];
@@ -124,9 +132,15 @@ static unsigned expand(const char *arg, char **buffer_p)
 				continue; /* next iter will copy '-' and stop */
 			}
 			i = (unsigned char) *arg;
+			arg += 3; /* skip 0-9 or 0-\ */
+			if (ac == '\\') {
+				const char *z;
+				z = arg;
+				ac = bb_process_escape_sequence(&z);
+				arg = (char *)z;
+			}
 			while (i <= ac) /* ok: i is unsigned _int_ */
 				buffer[pos++] = i++;
-			arg += 3; /* skip 0-9 */
 			continue;
 		}
 		if ((ENABLE_FEATURE_TR_CLASSES || ENABLE_FEATURE_TR_EQUIV)
@@ -284,8 +298,8 @@ int tr_main(int argc UNUSED_PARAM, char **argv)
 	 * In POSIX locale, these are the same.
 	 */
 
-	opt_complementary = "-1";
-	opts = getopt32(argv, "+Ccds"); /* '+': stop at first non-option */
+	/* '+': stop at first non-option */
+	opts = getopt32(argv, "^+" "Ccds" "\0" "-1");
 	argv += optind;
 
 	str1_length = expand(*argv++, &str1);

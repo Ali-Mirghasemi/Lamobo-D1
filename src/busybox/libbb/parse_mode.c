@@ -6,16 +6,15 @@
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
+#include "libbb.h"
 
 /* http://www.opengroup.org/onlinepubs/007904975/utilities/chmod.html */
-
-#include "libbb.h"
 
 /* This function is used from NOFORK applets. It must not allocate anything */
 
 #define FILEMODEBITS (S_ISUID | S_ISGID | S_ISVTX | S_IRWXU | S_IRWXG | S_IRWXO)
 
-int FAST_FUNC bb_parse_mode(const char *s, mode_t *current_mode)
+int FAST_FUNC bb_parse_mode(const char *s, unsigned current_mode)
 {
 	static const mode_t who_mask[] = {
 		S_ISUID | S_ISGID | S_ISVTX | S_IRWXU | S_IRWXG | S_IRWXO, /* a */
@@ -46,13 +45,12 @@ int FAST_FUNC bb_parse_mode(const char *s, mode_t *current_mode)
 
 		tmp = strtoul(s, &e, 8);
 		if (*e || (tmp > 07777U)) { /* Check range and trailing chars. */
-			return 0;
+			return -1;
 		}
-		*current_mode = tmp;
-		return 1;
+		return tmp;
 	}
 
-	new_mode = *current_mode;
+	new_mode = current_mode;
 
 	/* Note: we allow empty clauses, and hence empty modes.
 	 * We treat an empty mode as no change to perms. */
@@ -71,7 +69,7 @@ int FAST_FUNC bb_parse_mode(const char *s, mode_t *current_mode)
 			if (*p == *s) {
 				wholist |= who_mask[(int)(p-who_chars)];
 				if (!*++s) {
-					return 0;
+					return -1;
 				}
 				goto WHO_LIST;
 			}
@@ -80,7 +78,7 @@ int FAST_FUNC bb_parse_mode(const char *s, mode_t *current_mode)
 		do {    /* Process action list. */
 			if ((*s != '+') && (*s != '-')) {
 				if (*s != '=') {
-					return 0;
+					return -1;
 				}
 				/* Since op is '=', clear all bits corresponding to the
 				 * wholist, or all file bits if wholist is empty. */
@@ -145,6 +143,5 @@ int FAST_FUNC bb_parse_mode(const char *s, mode_t *current_mode)
 		} while (*s && (*s != ','));
 	}
 
-	*current_mode = new_mode;
-	return 1;
+	return new_mode;
 }

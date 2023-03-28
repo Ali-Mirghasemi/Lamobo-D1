@@ -16,15 +16,49 @@
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
+//config:config KLOGD
+//config:	bool "klogd (5.7 kb)"
+//config:	default y
+//config:	help
+//config:	klogd is a utility which intercepts and logs all
+//config:	messages from the Linux kernel and sends the messages
+//config:	out to the 'syslogd' utility so they can be logged. If
+//config:	you wish to record the messages produced by the kernel,
+//config:	you should enable this option.
+//config:
+//config:comment "klogd should not be used together with syslog to kernel printk buffer"
+//config:	depends on KLOGD && FEATURE_KMSG_SYSLOG
+//config:
+//config:config FEATURE_KLOGD_KLOGCTL
+//config:	bool "Use the klogctl() interface"
+//config:	default y
+//config:	depends on KLOGD
+//config:	select PLATFORM_LINUX
+//config:	help
+//config:	The klogd applet supports two interfaces for reading
+//config:	kernel messages. Linux provides the klogctl() interface
+//config:	which allows reading messages from the kernel ring buffer
+//config:	independently from the file system.
+//config:
+//config:	If you answer 'N' here, klogd will use the more portable
+//config:	approach of reading them from /proc or a device node.
+//config:	However, this method requires the file to be available.
+//config:
+//config:	If in doubt, say 'Y'.
+
+//applet:IF_KLOGD(APPLET(klogd, BB_DIR_SBIN, BB_SUID_DROP))
+
+//kbuild:lib-$(CONFIG_KLOGD) += klogd.o
 
 //usage:#define klogd_trivial_usage
 //usage:       "[-c N] [-n]"
 //usage:#define klogd_full_usage "\n\n"
-//usage:       "Kernel logger\n"
+//usage:       "Log kernel messages to syslog\n"
 //usage:     "\n	-c N	Print to console messages more urgent than prio N (1-8)"
 //usage:     "\n	-n	Run in foreground"
 
 #include "libbb.h"
+#include "common_bufsiz.h"
 #include <syslog.h>
 
 
@@ -51,6 +85,7 @@ static void klogd_setloglevel(int lvl)
 
 static int klogd_read(char *bufp, int len)
 {
+	/* "2 -- Read from the log." */
 	return klogctl(2, bufp, len);
 }
 # define READ_ERROR "klogctl(2) error"
@@ -65,7 +100,6 @@ static void klogd_close(void)
 
 #else
 
-# include <paths.h>
 # ifndef _PATH_KLOG
 #  ifdef __GNU__
 #   define _PATH_KLOG "/dev/klog"
@@ -115,7 +149,7 @@ static void klogd_close(void)
 
 #define log_buffer bb_common_bufsiz1
 enum {
-	KLOGD_LOGBUF_SIZE = sizeof(log_buffer),
+	KLOGD_LOGBUF_SIZE = COMMON_BUFSIZE,
 	OPT_LEVEL      = (1 << 0),
 	OPT_FOREGROUND = (1 << 1),
 };
@@ -140,6 +174,8 @@ int klogd_main(int argc UNUSED_PARAM, char **argv)
 	char *opt_c;
 	int opt;
 	int used;
+
+	setup_common_bufsiz();
 
 	opt = getopt32(argv, "c:n", &opt_c);
 	if (opt & OPT_LEVEL) {
@@ -195,13 +231,14 @@ int klogd_main(int argc UNUSED_PARAM, char **argv)
 
 	syslog(LOG_NOTICE, "klogd started: %s", bb_banner);
 
+	write_pidfile(CONFIG_PID_FILE_PATH "/klogd.pid");
+
 	used = 0;
 	while (!bb_got_signal) {
 		int n;
 		int priority;
 		char *start;
 
-		/* "2 -- Read from the log." */
 		start = log_buffer + used;
 		n = klogd_read(start, KLOGD_LOGBUF_SIZE-1 - used);
 		if (n < 0) {
@@ -239,12 +276,12 @@ int klogd_main(int argc UNUSED_PARAM, char **argv)
 			if (*start == '<') {
 				start++;
 				if (*start) {
-					/* kernel never generates multi-digit prios */
-					priority = (*start - '0');
-					start++;
+					char *end;
+					priority = strtoul(start, &end, 10);
+					if (*end == '>')
+						end++;
+					start = end;
 				}
-				if (*start == '>')
-					start++;
 			}
 			/* Log (only non-empty lines) */
 			if (*start)
@@ -258,6 +295,7 @@ int klogd_main(int argc UNUSED_PARAM, char **argv)
 
 	klogd_close();
 	syslog(LOG_NOTICE, "klogd: exiting");
+	remove_pidfile(CONFIG_PID_FILE_PATH "/klogd.pid");
 	if (bb_got_signal)
 		kill_myself_with_sig(bb_got_signal);
 	return EXIT_FAILURE;

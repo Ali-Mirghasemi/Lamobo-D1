@@ -6,7 +6,6 @@
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
-
 #include "libbb.h"
 
 /* Used from NOFORK applets. Must not allocate anything */
@@ -33,16 +32,16 @@ int FAST_FUNC remove_file(const char *path, int flags)
 		int status = 0;
 
 		if (!(flags & FILEUTILS_RECUR)) {
-			bb_error_msg("%s: is a directory", path);
+			bb_error_msg("'%s' is a directory", path);
 			return -1;
 		}
 
 		if ((!(flags & FILEUTILS_FORCE) && access(path, W_OK) < 0 && isatty(0))
 		 || (flags & FILEUTILS_INTERACTIVE)
 		) {
-			fprintf(stderr, "%s: descend into directory '%s'? ", applet_name,
-					path);
-			if (!bb_ask_confirmation())
+			fprintf(stderr, "%s: descend into directory '%s'? ",
+					applet_name, path);
+			if (!bb_ask_y_confirmation())
 				return 0;
 		}
 
@@ -68,14 +67,19 @@ int FAST_FUNC remove_file(const char *path, int flags)
 		}
 
 		if (flags & FILEUTILS_INTERACTIVE) {
-			fprintf(stderr, "%s: remove directory '%s'? ", applet_name, path);
-			if (!bb_ask_confirmation())
+			fprintf(stderr, "%s: remove directory '%s'? ",
+					applet_name, path);
+			if (!bb_ask_y_confirmation())
 				return status;
 		}
 
-		if (rmdir(path) < 0) {
+		if (status == 0 && rmdir(path) < 0) {
 			bb_perror_msg("can't remove '%s'", path);
 			return -1;
+		}
+
+		if (flags & FILEUTILS_VERBOSE) {
+			printf("removed directory: '%s'\n", path);
 		}
 
 		return status;
@@ -89,13 +93,17 @@ int FAST_FUNC remove_file(const char *path, int flags)
 	 || (flags & FILEUTILS_INTERACTIVE)
 	) {
 		fprintf(stderr, "%s: remove '%s'? ", applet_name, path);
-		if (!bb_ask_confirmation())
+		if (!bb_ask_y_confirmation())
 			return 0;
 	}
 
 	if (unlink(path) < 0) {
 		bb_perror_msg("can't remove '%s'", path);
 		return -1;
+	}
+
+	if (flags & FILEUTILS_VERBOSE) {
+		printf("removed '%s'\n", path);
 	}
 
 	return 0;

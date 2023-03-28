@@ -20,6 +20,7 @@
 #include "shell_common.h"
 
 const char defifsvar[] ALIGN1 = "IFS= \t\n";
+const char defoptindvar[] ALIGN1 = "OPTIND=1";
 
 
 int FAST_FUNC is_well_formed_var_name(const char *s, char terminator)
@@ -36,7 +37,7 @@ int FAST_FUNC is_well_formed_var_name(const char *s, char terminator)
 
 /* read builtin */
 
-/* Needs to be interruptible: shell mush handle traps and shell-special signals
+/* Needs to be interruptible: shell must handle traps and shell-special signals
  * while inside read. To implement this, be sure to not loop on EINTR
  * and return errno == EINTR reliably.
  */
@@ -45,30 +46,28 @@ int FAST_FUNC is_well_formed_var_name(const char *s, char terminator)
 //Here we can simply store "VAR=" at buffer start and store read data directly
 //after "=", then pass buffer to setvar() to consume.
 const char* FAST_FUNC
-shell_builtin_read(void FAST_FUNC (*setvar)(const char *name, const char *val),
-	char       **argv,
-	const char *ifs,
-	int        read_flags,
-	const char *opt_n,
-	const char *opt_p,
-	const char *opt_t,
-	const char *opt_u
-)
+shell_builtin_read(struct builtin_read_params *params)
 {
+	struct pollfd pfd[1];
+#define fd (pfd[0].fd) /* -u FD */
 	unsigned err;
 	unsigned end_ms; /* -t TIMEOUT */
-	int fd; /* -u FD */
 	int nchars; /* -n NUM */
 	char **pp;
 	char *buffer;
+	char delim;
 	struct termios tty, old_tty;
 	const char *retval;
 	int bufpos; /* need to be able to hold -1 */
 	int startword;
 	smallint backslash;
+	char **argv;
+	const char *ifs;
+	int read_flags;
 
 	errno = err = 0;
 
+	argv = params->argv;
 	pp = argv;
 	while (*pp) {
 		if (!is_well_formed_var_name(*pp, '\0')) {
@@ -80,59 +79,79 @@ shell_builtin_read(void FAST_FUNC (*setvar)(const char *name, const char *val),
 	}
 
 	nchars = 0; /* if != 0, -n is in effect */
-	if (opt_n) {
-		nchars = bb_strtou(opt_n, NULL, 10);
+	if (params->opt_n) {
+		nchars = bb_strtou(params->opt_n, NULL, 10);
 		if (nchars < 0 || errno)
 			return "invalid count";
 		/* note: "-n 0": off (bash 3.2 does this too) */
 	}
+
 	end_ms = 0;
-	if (opt_t) {
-		end_ms = bb_strtou(opt_t, NULL, 10);
-		if (errno || end_ms > UINT_MAX / 2048)
+	if (params->opt_t && !ENABLE_FEATURE_SH_READ_FRAC) {
+		end_ms = bb_strtou(params->opt_t, NULL, 10);
+		if (errno)
 			return "invalid timeout";
+		if (end_ms > UINT_MAX / 2048) /* be safely away from overflow */
+			end_ms = UINT_MAX / 2048;
 		end_ms *= 1000;
-#if 0 /* even bash has no -t N.NNN support */
-		ts.tv_sec = bb_strtou(opt_t, &p, 10);
-		ts.tv_usec = 0;
-		/* EINVAL means number is ok, but not terminated by NUL */
-		if (*p == '.' && errno == EINVAL) {
-			char *p2;
-			if (*++p) {
-				int scale;
-				ts.tv_usec = bb_strtou(p, &p2, 10);
-				if (errno)
-					return "invalid timeout";
-				scale = p2 - p;
-				/* normalize to usec */
-				if (scale > 6)
-					return "invalid timeout";
-				while (scale++ < 6)
-					ts.tv_usec *= 10;
-			}
-		} else if (ts.tv_sec < 0 || errno) {
-			return "invalid timeout";
-		}
-		if (!(ts.tv_sec | ts.tv_usec)) { /* both are 0? */
-			return "invalid timeout";
-		}
-#endif /* if 0 */
 	}
+	if (params->opt_t && ENABLE_FEATURE_SH_READ_FRAC) {
+		/* bash 4.3 (maybe earlier) supports -t N.NNNNNN */
+		char *p;
+		/* Eat up to three fractional digits */
+		int frac_digits = 3 + 1;
+
+		end_ms = bb_strtou(params->opt_t, &p, 10);
+		if (end_ms > UINT_MAX / 2048) /* be safely away from overflow */
+			end_ms = UINT_MAX / 2048;
+
+		if (errno) {
+			/* EINVAL = number is ok, but not NUL terminated */
+			if (errno != EINVAL || *p != '.')
+				return "invalid timeout";
+			/* Do not check the rest: bash allows "0.123456xyz" */
+			while (*++p && --frac_digits) {
+				end_ms *= 10;
+				end_ms += (*p - '0');
+				if ((unsigned char)(*p - '0') > 9)
+					return "invalid timeout";
+			}
+		}
+		while (--frac_digits > 0) {
+			end_ms *= 10;
+		}
+	}
+
 	fd = STDIN_FILENO;
-	if (opt_u) {
-		fd = bb_strtou(opt_u, NULL, 10);
+	if (params->opt_u) {
+		fd = bb_strtou(params->opt_u, NULL, 10);
 		if (fd < 0 || errno)
 			return "invalid file descriptor";
 	}
 
-	if (opt_p && isatty(fd)) {
-		fputs(opt_p, stderr);
+	if (params->opt_t && end_ms == 0) {
+		/* "If timeout is 0, read returns immediately, without trying
+		 * to read any data. The exit status is 0 if input is available
+		 * on the specified file descriptor, non-zero otherwise."
+		 * bash seems to ignore -p PROMPT for this use case.
+		 */
+		int r;
+		pfd[0].events = POLLIN;
+		r = poll(pfd, 1, /*timeout:*/ 0);
+		/* Return 0 only if poll returns 1 ("one fd ready"), else return 1: */
+		return (const char *)(uintptr_t)(r <= 0);
+	}
+
+	if (params->opt_p && isatty(fd)) {
+		fputs(params->opt_p, stderr);
 		fflush_all();
 	}
 
+	ifs = params->ifs;
 	if (ifs == NULL)
 		ifs = defifs;
 
+	read_flags = params->read_flags;
 	if (nchars || (read_flags & BUILTIN_READ_SILENT)) {
 		tcgetattr(fd, &tty);
 		old_tty = tty;
@@ -141,7 +160,7 @@ shell_builtin_read(void FAST_FUNC (*setvar)(const char *name, const char *val),
 			// Setting it to more than 1 breaks poll():
 			// it blocks even if there's data. !??
 			//tty.c_cc[VMIN] = nchars < 256 ? nchars : 255;
-			/* reads would block only if < 1 char is available */
+			/* reads will block only if < 1 char is available */
 			tty.c_cc[VMIN] = 1;
 			/* no timeout (reads block forever) */
 			tty.c_cc[VTIME] = 0;
@@ -159,21 +178,25 @@ shell_builtin_read(void FAST_FUNC (*setvar)(const char *name, const char *val),
 	retval = (const char *)(uintptr_t)0;
 	startword = 1;
 	backslash = 0;
-	if (end_ms) /* NB: end_ms stays nonzero: */
-		end_ms = ((unsigned)monotonic_ms() + end_ms) | 1;
+	if (params->opt_t)
+		end_ms += (unsigned)monotonic_ms();
 	buffer = NULL;
 	bufpos = 0;
+	delim = params->opt_d ? params->opt_d[0] : '\n';
 	do {
 		char c;
-		struct pollfd pfd[1];
 		int timeout;
 
 		if ((bufpos & 0xff) == 0)
-			buffer = xrealloc(buffer, bufpos + 0x100);
+			buffer = xrealloc(buffer, bufpos + 0x101);
 
 		timeout = -1;
-		if (end_ms) {
+		if (params->opt_t) {
 			timeout = end_ms - (unsigned)monotonic_ms();
+			/* ^^^^^^^^^^^^^ all values are unsigned,
+			 * wrapping math is used here, good even if
+			 * 32-bit unix time wrapped (year 2038+).
+			 */
 			if (timeout <= 0) { /* already late? */
 				retval = (const char *)(uintptr_t)1;
 				goto ret;
@@ -185,9 +208,8 @@ shell_builtin_read(void FAST_FUNC (*setvar)(const char *name, const char *val),
 		 * regardless of SA_RESTART-ness of that signal!
 		 */
 		errno = 0;
-		pfd[0].fd = fd;
 		pfd[0].events = POLLIN;
-		if (poll(pfd, 1, timeout) != 1) {
+		if (poll(pfd, 1, timeout) <= 0) {
 			/* timed out, or EINTR */
 			err = errno;
 			retval = (const char *)(uintptr_t)1;
@@ -202,24 +224,26 @@ shell_builtin_read(void FAST_FUNC (*setvar)(const char *name, const char *val),
 		c = buffer[bufpos];
 		if (c == '\0')
 			continue;
-		if (backslash) {
-			backslash = 0;
-			if (c != '\n')
-				goto put;
-			continue;
+		if (!(read_flags & BUILTIN_READ_RAW)) {
+			if (backslash) {
+				backslash = 0;
+				if (c != '\n')
+					goto put;
+				continue;
+			}
+			if (c == '\\') {
+				backslash = 1;
+				continue;
+			}
 		}
-		if (!(read_flags & BUILTIN_READ_RAW) && c == '\\') {
-			backslash = 1;
-			continue;
-		}
-		if (c == '\n')
+		if (c == delim) /* '\n' or -d CHAR */
 			break;
 
 		/* $IFS splitting. NOT done if we run "read"
 		 * without variable names (bash compat).
 		 * Thus, "read" and "read REPLY" are not the same.
 		 */
-		if (argv[0]) {
+		if (!params->opt_d && argv[0]) {
 /* http://www.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18_06_05 */
 			const char *is_ifs = strchr(ifs, c);
 			if (startword && is_ifs) {
@@ -234,7 +258,7 @@ shell_builtin_read(void FAST_FUNC (*setvar)(const char *name, const char *val),
 			if (argv[1] != NULL && is_ifs) {
 				buffer[bufpos] = '\0';
 				bufpos = 0;
-				setvar(*argv, buffer);
+				params->setvar(*argv, buffer);
 				argv++;
 				/* can we skip one non-space ifs char? (2: yes) */
 				startword = isspace(c) ? 2 : 1;
@@ -247,18 +271,53 @@ shell_builtin_read(void FAST_FUNC (*setvar)(const char *name, const char *val),
 
 	if (argv[0]) {
 		/* Remove trailing space $IFS chars */
-		while (--bufpos >= 0 && isspace(buffer[bufpos]) && strchr(ifs, buffer[bufpos]) != NULL)
+		while (--bufpos >= 0
+		 && isspace(buffer[bufpos])
+		 && strchr(ifs, buffer[bufpos]) != NULL
+		) {
 			continue;
+		}
 		buffer[bufpos + 1] = '\0';
+
+		/* Last variable takes the entire remainder with delimiters
+		 * (sans trailing whitespace $IFS),
+		 * but ***only "if there are fewer vars than fields"(c)***!
+		 * The "X:Y:" case below: there are two fields,
+		 * and therefore last delimiter (:) is eaten:
+		 * IFS=": "
+		 * echo "X:Y:Z:"  | (read x y; echo "|$x|$y|") # |X|Y:Z:|
+		 * echo "X:Y:Z"   | (read x y; echo "|$x|$y|") # |X|Y:Z|
+		 * echo "X:Y:"    | (read x y; echo "|$x|$y|") # |X|Y|, not |X|Y:|
+		 * echo "X:Y  : " | (read x y; echo "|$x|$y|") # |X|Y|
+		 */
+		if (bufpos >= 0
+		 && strchr(ifs, buffer[bufpos]) != NULL
+		) {
+			/* There _is_ a non-whitespace IFS char */
+			/* Skip whitespace IFS char before it */
+			while (--bufpos >= 0
+			 && isspace(buffer[bufpos])
+			 && strchr(ifs, buffer[bufpos]) != NULL
+			) {
+				continue;
+			}
+			/* Are there $IFS chars? */
+			if (strcspn(buffer, ifs) >= ++bufpos) {
+				/* No: last var takes one field, not more */
+				/* So, drop trailing IFS delims */
+				buffer[bufpos] = '\0';
+			}
+		}
+
 		/* Use the remainder as a value for the next variable */
-		setvar(*argv, buffer);
+		params->setvar(*argv, buffer);
 		/* Set the rest to "" */
 		while (*++argv)
-			setvar(*argv, "");
+			params->setvar(*argv, "");
 	} else {
 		/* Note: no $IFS removal */
 		buffer[bufpos] = '\0';
-		setvar("REPLY", buffer);
+		params->setvar("REPLY", buffer);
 	}
 
  ret:
@@ -268,6 +327,7 @@ shell_builtin_read(void FAST_FUNC (*setvar)(const char *name, const char *val),
 
 	errno = err;
 	return retval;
+#undef fd
 }
 
 /* ulimit builtin */
@@ -327,7 +387,7 @@ enum {
 };
 
 /* "-": treat args as parameters of option with ASCII code 1 */
-static const char ulimit_opt_string[] = "-HSa"
+static const char ulimit_opt_string[] ALIGN1 = "-HSa"
 #ifdef RLIMIT_FSIZE
 			"f::"
 #endif
@@ -379,7 +439,7 @@ static void printlim(unsigned opts, const struct rlimit *limit,
 		val = limit->rlim_cur;
 
 	if (val == RLIM_INFINITY)
-		printf("unlimited\n");
+		puts("unlimited");
 	else {
 		val >>= l->factor_shift;
 		printf("%llu\n", (long long) val);
@@ -396,20 +456,12 @@ shell_builtin_ulimit(char **argv)
 	 * ulimit 123 -c2 -l 456
 	 */
 
-	/* In case getopt was already called:
-	 * reset the libc getopt() function, which keeps internal state.
+	/* In case getopt() was already called:
+	 * reset libc getopt() internal state.
 	 */
-#ifdef __GLIBC__
-	optind = 0;
-#else /* BSD style */
-	optind = 1;
-	/* optreset = 1; */
-#endif
-	/* optarg = NULL; opterr = 0; optopt = 0; - do we need this?? */
+	GETOPT_RESET();
 
-	argc = 1;
-	while (argv[argc])
-		argc++;
+	argc = string_array_len(argv);
 
 	opts = 0;
 	while (1) {
@@ -492,7 +544,6 @@ shell_builtin_ulimit(char **argv)
 			/* bad option. getopt already complained. */
 			break;
 		}
-
 	} /* while (there are options) */
 
 	return 0;
