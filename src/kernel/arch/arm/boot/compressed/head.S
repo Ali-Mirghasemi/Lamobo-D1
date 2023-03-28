@@ -11,6 +11,7 @@
 #include <linux/linkage.h>
 #include <asm/mach-types.h>
 
+	.arch	armv7-a
 /*
  * Debugging stuff
  *
