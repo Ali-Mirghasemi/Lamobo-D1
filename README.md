@@ -8,8 +8,7 @@
 
 0. Tested OS
 
-    - Ubuntu 12.04.3 32Bit
-    - Ubuntu 12.04.3 64Bit
+    - Ubuntu 20.04.6 64Bit (WSL)
 
 1. Clone
 
@@ -42,8 +41,7 @@
 
 0. Tested OS
 
-    - Windows 7 Professional 32Bit
-    - Windows 7 Professional 64Bit
+    - Windows 10 Professional 64Bit
 
 1. Prepare
 
