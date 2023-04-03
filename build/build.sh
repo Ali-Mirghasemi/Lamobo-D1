@@ -280,9 +280,9 @@ build_all()
     config_busybox
     build_busybox
     build_rootfs
-    build_samples
-    build_node
-    build_updater
+    #build_samples
+    #build_node
+    #build_updater
     pack_basic
     pack_extra
 }
